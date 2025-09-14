@@ -47,6 +47,7 @@ parser.add_argument('--qos', type=str, default='lowprio')
 # Model testbed arguments
 parser.add_argument('--out_dir', type=str, default=f'model_training/{now}')
 parser.add_argument('--log_wandb', action='store_true')
+parser.add_argument('--wandb_run_name', type=str, default='gpt')
 parser.add_argument('--wandb_project', type=str, default=None)
 parser.add_argument('--backend', type=str, default='nccl')
 parser.add_argument('--device', type=str, default='cuda')
@@ -63,7 +64,7 @@ parser.add_argument('--eval_only', action='store_true')
 
 # Initialization and dataset
 parser.add_argument('--init_from', type=str, default='scratch')
-parser.add_argument('--dataset', type=str, default='slim_pajama')
+parser.add_argument('--dataset', type=str, default='openwebtext')
 parser.add_argument('--block_size', type=int, default=1024)
 
 # Model dynamics arguments. By default max_iters is determined by the prespecified TPP
@@ -134,7 +135,7 @@ args = parser.parse_args()
 
 file_dir = os.path.dirname(os.path.abspath(__file__))
 if args.use_fsdp:
-    TRAINING_SCRIPT = os.path.join(file_dir, 'slimpj_fsdp.py')
+    raise Exception("use FSDP is depreciated, use `enable_fsdp` instead.")
 else:
     TRAINING_SCRIPT = os.path.join(file_dir, 'slimpj_train_2.py')
 
@@ -168,7 +169,7 @@ if args.n_gpus > 8:
     raise ValueError("n_gpus is a per-node value and cannot exceed 8.")
 
 # Determine the command to run based on n_gpus
-if args.n_gpus > 1:
+if args.n_gpus > 0:
     # For multi-GPU, use torchrun
     # SLURM_JOB_NODELIST and SLURM_JOBID are available in the SLURM job environment
     # We need to determine MASTER_ADDR and MASTER_PORT within the SLURM script
@@ -219,8 +220,8 @@ shell_script = f"""#!/bin/bash
 #SBATCH --output={args.sbatch_logging_dir}/%j.out
 #SBATCH --error={args.sbatch_logging_dir}/%j.err
 #SBATCH --mem={args.sbatch_mem}G
-#SBATCH --partition={args.partition}
-#SBATCH --qos={args.qos}
+{f'#SBATCH --partition={args.partition}' if args.partition is not None else ''}
+{f'#SBATCH --qos={args.qos}' if args.qos is not None else ''}
 #SBATCH --distribution=pack
 
 {dist_args}
@@ -229,6 +230,7 @@ TRAINING_ARGS=(
     --out_dir="{args.out_dir}"
     --wandb_log={args.log_wandb}
     --wandb_project='{args.wandb_project}'
+    --wandb_run_name='{args.wandb_run_name}'
     --eval_interval={args.eval_interval}
     --log_interval={args.log_interval}
     --avg_interval={args.avg_interval}

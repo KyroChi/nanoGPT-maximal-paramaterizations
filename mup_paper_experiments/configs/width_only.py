@@ -6,6 +6,7 @@
 # Get the results
 # python crawl_wandb.py --entity krchickering-uc-davis --project width-only-ablation-lr-decay --output-dir ./mup_paper_experiments/results/ablations/width-only-ablation
 # python crawl_wandb.py --entity krchickering-uc-davis --project width-only-ablation-lr-decay-coarse-wd --output-dir ./mup_paper_experiments/results/ablations/width-only-ablation-coarse-wd
+# python crawl_wandb.py --entity krchickering-uc-davis --project width-only-ablation-11 --output-dir ./mup_paper_experiments/results/ablations/width-only-ablation-11
 import numpy as np
 from copy import deepcopy
 
@@ -17,7 +18,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--dry-run', action='store_true', help='Enable dry run mode')
 args = parser.parse_args()
 
-PROD = not args.dry_run
+PROD = True
 
 WEIGHT_DECAY = 0.1
 MODEL_DEPTH = 8
@@ -30,6 +31,7 @@ learning_rates = [
 seeds = [42, 43] if PROD else [42]
 
 WANDB_PROJECT = f'width-only-ablation-lr-decay-coarse-wd-prod_{PROD}'
+WANDB_PROJECT = f'width-only-ablation-11'
 
 model_configs = [
     {'n_embd': 256,  'n_head': 4,   'n_kv_head': 4,   'n_layer': MODEL_DEPTH, 'weight_decay': WEIGHT_DECAY, 'log_wandb': 'true', 'wandb_project': WANDB_PROJECT, 'n_gpus': 2, 'gradient_accumulation_steps': 2, 'batch_size': 50, 'max_iters': 981 if PROD else 30},
@@ -46,9 +48,9 @@ model_configs = [
 
 configs = []
 for mup in [True, False]:
-    for lr in learning_rates:
-        for seed in seeds:
-            for conf in model_configs:
+    for seed in seeds:
+        for conf in model_configs:
+            for lr in learning_rates:
                 conf = deepcopy(conf)
                 conf['learning_rate'] = lr
                 conf['seed'] = seed
@@ -75,7 +77,7 @@ if __name__ == "__main__":
     import json
     import random
 
-    random.shuffle(configs)
+    # random.shuffle(configs)
 
     config_strings = []
     for config in configs:

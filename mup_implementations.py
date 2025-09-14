@@ -240,7 +240,7 @@ xllm_impl = {
     'embedding': {
         'init_std':             lambda m: 1.0 / m,
         'lr_scale':             lambda m: 1.0 / m,
-        'wd_scale':             lambda m: m,
+        'wd_scale':             lambda m: 0,
         'output_multiplier':    lambda m: m,
     },
     'hidden': {
@@ -259,7 +259,7 @@ xllm_impl = {
         'lr_scale':             lambda m: 1.0 / m,
     },
     'attention_scale':          lambda d: 1 / d,
-    'depth_scale':              lambda L: 1.0,
+    'depth_scale':              lambda L: 1.0 / L,
 }
 
 mengxi_impl = {

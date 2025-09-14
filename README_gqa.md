@@ -3,8 +3,10 @@
 ## Installation
 ```
     conda env create -n nanogpt -f environment.yml
+    pip uninstall torch
+    pip install torch
 ```
-followed by
+(please someone fix this insane hack) followed by
 ```
     conda activate nanogpt
 ```
@@ -19,6 +21,7 @@ Finally, we will need to set up the OpenWebText dataset which we are using for a
 ```
 which should only take a few minutes to download and parse.
 
+While this is downloading, modify the files `mup_paper_experiments/build_orchastrator.py` (lines 57 and 58) and `/mnt/weka/home/kyle.chickering/code/test-share-gpt/paramaterized_train.py` (lines 44 and 45) to set the correct qos and partition parameters for the launched jobs.
 
 To make sure that the installation is working we can submit a dry-run SLURM job to run an ablation test
 ```
