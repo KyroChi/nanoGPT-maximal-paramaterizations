@@ -38,8 +38,8 @@ class L2Norm(nn.Module):
         self.eps = eps
 
     def forward(self, x):
-        mean = (input**2).mean(dim=-1, keepdim=True)
-        normed = input / torch.sqrt(mean + self.eps)
+        mean = (x**2).mean(dim=-1, keepdim=True)
+        normed = x / torch.sqrt(mean + self.eps)
         return self.mup_multiplier * normed
 
 class RMSNorm(nn.Module):
@@ -94,6 +94,76 @@ def repeat_kv(x: torch.Tensor, n_rep: int) -> torch.Tensor:
     x = x.reshape(bsz, slen, n_kv_heads * n_rep, head_dim)
     return x
 
+def precompute_freqs_cis(dim: int, end: int, theta: float = 10000.0):
+    """
+    Precompute the frequency tensor for complex exponentials (cis) with given dimensions.
+    
+    This function calculates a frequency tensor with complex exponentials using the given dimension 'dim'
+    and the end index 'end'. The 'theta' parameter scales the frequencies.
+    The returned tensor contains complex values in complex64 data type.
+    
+    Args:
+        dim (int): Dimension of the frequency tensor.
+        end (int): End index for precomputing frequencies.
+        theta (float, optional): Scaling factor for frequency computation. Defaults to 10000.0.
+        
+    Returns:
+        torch.Tensor: Precomputed frequency tensor with complex exponentials.
+    """
+    freqs = 1.0 / (theta ** (torch.arange(0, dim, 2)[: (dim // 2)].float() / dim))
+    t = torch.arange(end, device=freqs.device, dtype=torch.float32)
+    freqs = torch.outer(t, freqs)
+    freqs_cis = torch.polar(torch.ones_like(freqs), freqs)  # complex64
+    return freqs_cis
+
+def reshape_for_broadcast(freqs_cis: torch.Tensor, x: torch.Tensor):
+    """
+    Reshape frequency tensor for broadcasting it with another tensor.
+    
+    This function reshapes the frequency tensor to have the same shape as the target tensor 'x'
+    for the purpose of broadcasting the frequency tensor during element-wise operations.
+    
+    Args:
+        freqs_cis (torch.Tensor): Frequency tensor to be reshaped.
+        x (torch.Tensor): Target tensor for broadcasting compatibility.
+        
+    Returns:
+        torch.Tensor: Reshaped frequency tensor.
+    """
+    ndim = x.ndim
+    assert 0 <= 1 < ndim
+    assert freqs_cis.shape == (x.shape[1], x.shape[-1])
+    shape = [d if i == 1 or i == ndim - 1 else 1 for i, d in enumerate(x.shape)]
+    return freqs_cis.view(*shape)
+
+def apply_rotary_emb(
+    xq: torch.Tensor,
+    xk: torch.Tensor,
+    freqs_cis: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """
+    Apply rotary embeddings to input tensors using the given frequency tensor.
+    
+    This function applies rotary embeddings to the given query 'xq' and key 'xk' tensors using the provided
+    frequency tensor 'freqs_cis'. The input tensors are reshaped as complex numbers and the frequency tensor
+    is reshaped for broadcasting compatibility. The resulting tensors contain rotary embeddings and are
+    returned as real tensors.
+    
+    Args:
+        xq (torch.Tensor): Query tensor to apply rotary embeddings.
+        xk (torch.Tensor): Key tensor to apply rotary embeddings.
+        freqs_cis (torch.Tensor): Precomputed frequency tensor for complex exponentials.
+        
+    Returns:
+        Tuple[torch.Tensor, torch.Tensor]: Tuple of modified query tensor and key tensor with rotary embeddings.
+    """
+    xq_ = torch.view_as_complex(xq.float().reshape(*xq.shape[:-1], -1, 2))
+    xk_ = torch.view_as_complex(xk.float().reshape(*xk.shape[:-1], -1, 2))
+    freqs_cis = reshape_for_broadcast(freqs_cis, xq_)
+    xq_out = torch.view_as_real(xq_ * freqs_cis).flatten(3)
+    xk_out = torch.view_as_real(xk_ * freqs_cis).flatten(3)
+    return xq_out.type_as(xq), xk_out.type_as(xk)
+
 class CausalSelfAttention(nn.Module):
 
     def __init__(self, config):
@@ -105,6 +175,7 @@ class CausalSelfAttention(nn.Module):
         self.n_kv_head = config.n_kv_head
 
         self.n_kv_reps = config.n_head // self.n_kv_head
+        self.head_dim = config.n_embd // config.n_head
 
         self.c_q = nn.Linear(config.n_embd, config.n_embd, bias=config.bias)
         # n_embd / n_kv_reps = n_kv_head * head_size
@@ -113,7 +184,17 @@ class CausalSelfAttention(nn.Module):
 
         self.kv_capture = Capture()
 
-        self.q_prelayer_norm = None
+        # RoPE configuration
+        self.use_rope = getattr(config, 'use_rope', False)
+        if self.use_rope:
+            # Precompute RoPE frequencies
+            self.register_buffer(
+                "freqs_cis", 
+                precompute_freqs_cis(self.head_dim, config.block_size, theta=getattr(config, 'rope_theta', 10000.0)),
+                persistent=False
+            )
+
+        self.q_prelayer_norm = nn.Identity()
         print(f"Config: q prelayer_norm: {config.q_prelayer_normalization}, k prelayer_norm: {config.k_prelayer_normalization}")
         if config.q_prelayer_normalization == 'LayerNorm':
             self.q_prelayer_norm = LayerNorm(config)
@@ -124,7 +205,7 @@ class CausalSelfAttention(nn.Module):
         elif config.q_prelayer_normalization == 'LayerNormWithBias':
             self.q_prelayer_norm = LayerNorm(config, bias=True)
 
-        self.k_prelayer_norm = None
+        self.k_prelayer_norm = nn.Identity()
         if config.k_prelayer_normalization == 'LayerNorm':
             self.k_prelayer_norm = LayerNorm(config)
         elif config.k_prelayer_normalization == 'L2Norm':
@@ -159,10 +240,8 @@ class CausalSelfAttention(nn.Module):
         q = self.fc_mult * self.c_q(x)
         k, v = ( self.fc_mult * self.c_kv(x) ).split(self.n_embd // self.n_kv_reps, dim=2)
 
-        if self.q_prelayer_norm is not None:
-            q = self.q_prelayer_norm(q)
-        if self.k_prelayer_norm is not None:
-            k = self.k_prelayer_norm(k)
+        q = self.q_prelayer_norm(q)        
+        k = self.k_prelayer_norm(k)
 
         q = q.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
 
@@ -171,6 +250,11 @@ class CausalSelfAttention(nn.Module):
 
         k = repeat_kv(k, self.n_kv_reps).transpose(1, 2) # (B, nh, T, hs)
         v = repeat_kv(v, self.n_kv_reps).transpose(1, 2) # (B, nh, T, hs)
+
+        # Apply RoPE if enabled
+        if self.use_rope:
+            freqs_cis = self.freqs_cis[:T]
+            q, k = apply_rotary_emb(q, k, freqs_cis)
 
         if 'kv_layer' in self.impl.keys():
             r = self.config.n_head // self.config.n_kv_head
@@ -422,13 +506,18 @@ class Block(nn.Module):
 
     def forward(self, x):
         x = x + self.depth_mult * self.attn(self.ln_1(x))
-        ffn_out = self.ffn(self.ln_2(x))
-        if isinstance(ffn_out, tuple):
-            # MoE returns (output, aux_loss)
-            y, aux = ffn_out
+        if self.use_moe:
+            ffn_out = self.ffn(self.ln_2(x))
+            if isinstance(ffn_out, tuple):
+                # MoE returns (output, aux_loss)
+                y, aux = ffn_out
+            else:
+                y, aux = ffn_out, 0.0
+            return x + self.depth_mult * y, aux
         else:
-            y, aux = ffn_out, 0.0
-        return x + self.depth_mult * y, aux
+            # Fast path for non-MoE: no tuple unpacking overhead
+            y = self.ffn(self.ln_2(x))
+            return x + self.depth_mult * y
 @dataclass                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              
 class GPTConfig:
     block_size: int = 1024
@@ -447,6 +536,10 @@ class GPTConfig:
     q_prelayer_normalization: str = 'None'
     k_prelayer_normalization: str = 'None'
     complete_p_layers: bool = False # if True, the depth multiplier is 1/n_layer, otherwise 1.0
+    # RoPE configuration
+    use_rope: bool = False # Enable/disable Rotary Position Embedding
+    rope_theta: float = 10000.0 # RoPE theta parameter for frequency scaling
+    # MoE configuration
     use_moe: bool = False
     router_topk: int = 8
     num_experts: int = 64
@@ -615,17 +708,24 @@ class GPT(nn.Module):
 
 
         # iterate through blocks and accumulate MoE aux losses if present
-        moe_aux = torch.tensor(0.0, device=device)
-        for block in self.transformer.h:
-            out = block(x)
-            if isinstance(out, tuple):
-                x, aux = out
-                if isinstance(aux, torch.Tensor):
-                    moe_aux = moe_aux + aux
+        if getattr(self.config, 'use_moe', False):
+            # MoE path: handle aux losses
+            moe_aux = torch.tensor(0.0, device=device)
+            for block in self.transformer.h:
+                out = block(x)
+                if isinstance(out, tuple):
+                    x, aux = out
+                    if isinstance(aux, torch.Tensor):
+                        moe_aux = moe_aux + aux
+                    else:
+                        moe_aux = moe_aux + torch.tensor(float(aux), device=device)
                 else:
-                    moe_aux = moe_aux + torch.tensor(float(aux), device=device)
-            else:
-                x = out
+                    x = out
+        else:
+            # Fast path for non-MoE: no aux loss overhead
+            moe_aux = None
+            for block in self.transformer.h:
+                x = block(x)
         x = self.transformer.ln_f(x)
 
         if targets is not None:
@@ -635,7 +735,7 @@ class GPT(nn.Module):
             # inference-time mini-optimization: only forward the lm_head on the very last position
             logits = self.lm_mult * self.lm_head(x[:, [-1], :]) # note: using list [-1] to preserve the time dim
             # combine language loss with MoE aux loss if MoE is enabled
-            if getattr(self.config, 'use_moe', False):
+            if getattr(self.config, 'use_moe', False) and moe_aux is not None:
                 loss = lm_loss + self.config.moe_seq_aux_loss_coeff * moe_aux
             else:
                 loss = lm_loss
@@ -643,8 +743,8 @@ class GPT(nn.Module):
             logits = self.lm_mult * self.lm_head(x[:, [-1], :])
             loss = None
 
-        if self.config.use_moe:
-            return logits, loss, moe_aux, lm_loss
+        if getattr(self.config, 'use_moe', False):
+            return logits, loss, moe_aux if moe_aux is not None else torch.tensor(0.0, device=device), lm_loss
         return logits, loss
 
     def crop_block_size(self, block_size):
@@ -715,11 +815,47 @@ class GPT(nn.Module):
 
         return model
 
-    def configure_optimizers(self, weight_decay, learning_rate, betas, eps, device_type, adaptive_optimizer=False):
+    def configure_optimizers(self, weight_decay, learning_rate, betas, eps, device_type, adaptive_optimizer=False, enable_fsdp=False):
         # fused_available = 'fused' in inspect.signature(torch.optim.AdamW).parameters
         use_fused = False # fused_available and device_type == 'cuda'
         extra_args = dict(fused=True) if use_fused else dict()
 
+        if enable_fsdp:
+            # With FSDP, we need to use a different approach since parameters are flattened
+            # We'll create parameter groups based on parameter names rather than parameter objects
+            def should_exclude_from_decay(param_name):
+                # Exclude embedding layers from weight decay
+                return 'wte' in param_name or 'wpe' in param_name or 'ln_' in param_name or 'bias' in param_name
+            
+            decay_params = []
+            no_decay_params_list = []
+            
+            for name, param in self.named_parameters():
+                if should_exclude_from_decay(name):
+                    no_decay_params_list.append(param)
+                else:
+                    decay_params.append(param)
+            
+            # Apply hidden layer learning rate scaling to both groups
+            hidden_lr_scale = self.impl['hidden']['lr_scale'](self.config.mup_multiplier)
+            
+            optim_groups = [
+                {'params': decay_params, 'weight_decay': weight_decay, 'lr': learning_rate * hidden_lr_scale},
+                {'params': no_decay_params_list, 'weight_decay': 0.0, 'lr': learning_rate * hidden_lr_scale}
+            ]
+            
+            if adaptive_optimizer:
+                # use the OWDA optimizer, which is an AdamW variant with dynamic weight decay
+                from oawda import OWDAAdam
+                print("Using OAWDA optimizer with FSDP")
+                optimizer = OWDAAdam(optim_groups, lr=learning_rate, betas=betas, eps=eps, weight_decay=weight_decay, **extra_args)
+            else:
+                optimizer = torch.optim.AdamW(optim_groups, lr=learning_rate, betas=betas, eps=eps, weight_decay=weight_decay, **extra_args)
+                print(f"using fused AdamW with FSDP: {use_fused}, hidden_lr_scale: {hidden_lr_scale:.6f}")
+            
+            return optimizer
+        
+        # Original MuP parameter grouping approach for non-FSDP
         optim_groups = []
         embedding_type, hidden_type, kv_type, unembedding_type, router_type, router_bias_type, moe_ffn_type1, moe_ffn_type2 = self._get_weight_groups(kv=True)
 
@@ -845,6 +981,7 @@ class GPT(nn.Module):
             print(f"using fused AdamW: {use_fused}")
             # optimizer = torch.optim.SGD(optim_groups, lr=learning_rate, weight_decay=weight_decay, momentum=0.9, nesterov=True)
 
+        # Apply MuP scaling (only for non-FSDP case, FSDP case returns early)
         for group in optimizer.param_groups:
             group['weight_decay'] = group['wd_scale'] * group['weight_decay'] * weight_decay
             group['lr'] = group['lr_scale'] * group['lr']

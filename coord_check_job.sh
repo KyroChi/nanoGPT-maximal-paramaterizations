@@ -6,6 +6,8 @@
 #SBATCH --gres=gpu:1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=4
+#SBATCH --priority=lowprio
+#SBATCH --reservation=moe
 
 now=$(date +%Y-%m-%d_%H-%M-%S)
 out_dir=coord-check-impl/${now}
@@ -31,18 +33,19 @@ for seed in {0..5}; do
             --eval_only=False \
             --init_from='scratch' \
             --wandb_log=False \
-            --dataset='slim_pajama' \
+            --dataset='openwebtext' \
             --gradient_accumulation_steps=1 \
             --batch_size=1 \
             --block_size=1024 \
-            --n_layer=3 \
+            --n_layer=2 \
             --n_head=${n_heads} \
-            --n_kv_head=2 \
+            --n_kv_head=${n_heads} \
             --n_embd=${emb} \
             --dropout=0.0 \
             --bias=False \
             --init_std=0.02 \
             --learning_rate=4e-5 \
+            --eps=1e-4 \
             --max_iters=4 \
             --weight_decay=0.0 \
             --beta1=0.9 \
@@ -54,7 +57,7 @@ for seed in {0..5}; do
             --seed=${seed} \
             --backend='nccl' \
             --device='cuda' \
-            --dtype='float32' \
+            --dtype='bfloat16' \
             --compile=False \
             --impl='tpv_left_impl'
     done

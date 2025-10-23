@@ -73,7 +73,7 @@ max_iters = 600000 # total number of training iterations
 weight_decay = 0.0
 beta1 = 0.9
 beta2 = 0.95
-eps = 1e-8 
+eps = 1e-12 
 grad_clip = 1.0 # clip gradients at this value, or disable if == 0.0
 # learning rate decay settings
 decay_lr = True # whether to decay the learning rate

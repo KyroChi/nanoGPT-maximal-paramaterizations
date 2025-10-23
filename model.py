@@ -344,31 +344,11 @@ class GPT(nn.Module):
             torch.nn.init.normal_(p, mean=0.0, std=self.config.init_std * self.impl['embedding']['init_std'](self.config.mup_multiplier))
 
         for p in kv:
-            target_mult = 1.0
-
-            if self.config.n_head // self.config.n_kv_head > 1:
-                # if we have kv heads we have to fiddle with the initialization distribution
+            if 'kv_layer' in self.impl:
                 r = self.config.n_head // self.config.n_kv_head
-                head_size = self.config.n_embd // self.config.n_head
-                H = self.config.n_kv_head * head_size
-                m = self.config.mup_multiplier
-                n = self.config.n_embd
-                n0 = n / m
-                # target_mult = m**(1/2) * H**(1/2)**(m/n)**(1/2) / ( m**(1/2)*(m**(1/2) + H**(1/2)*(m/n)**(1/2)) )
-                # target_mult = m**(1/2) / (r**(1/2)*(n**(1/2) + H**(1/2)))*(n0**(1/2) + H**(1/2))
-                target_mult = m**(1/2) * ( 1 + (H / n0)**(1/2) ) / ( r**(1/2) * (m**(1/2) + (H / n0)**(1/2)) )
-                # target_mult = r**(-1/2)
-                # target_mult = m**(1/2) / (r**(1/2) * (n**(1/2) + H**(1/2)))
-                # target_mult = H**(1/2) / ( m**(1/2) + H**(1/2) / n0**(1/2) )
-                # target_mult = m**(1/2) * H**(1/2) * 1 / ( r**(1/2) * (n**(1/2) + H**(1/2)) )
-                target_mult = H**(1/2) / r**(1/2)
-                target_mult = m**(1/2) / ( r**(1/2) * ( m**(1/2) + (H / n0)**(1/2) ) )
-                # target_mult = H**(1/2) / ( r**(1/2) * (m**(1/2) + (H / n0)**(1/2)) )
-                # target_mult = 1 / ( r**(1/2) * (m**(1/2) + (H / n0)**(1/2)) )
-                target_mult = m**(1/2) / ( r**(1/2) * ( m**(1/2) + (H / n0)**(1/2) ) )
-                target_mult = m**(1/2) / ( r**(1/2) * ( n**(1/2) + (H)**(1/2) ) )
-            
-            torch.nn.init.normal_(p, mean=0.0, std=self.config.init_std * self.impl['hidden']['init_std'](self.config.mup_multiplier) * target_mult)
+                torch.nn.init.normal_(p, mean=0.0, std=self.config.init_std * self.impl['kv_layer']['init_std'](self.config.mup_multiplier, r))
+            else:
+                torch.nn.init.normal_(p, mean=0.0, std=self.config.init_std * self.impl['hidden']['init_std'](self.config.mup_multiplier))
 
         for p in ht:
             torch.nn.init.normal_(p, mean=0.0, std=self.config.init_std * self.impl['hidden']['init_std'](self.config.mup_multiplier))
@@ -469,52 +449,77 @@ class GPT(nn.Module):
 
         return model
 
-    def configure_optimizers(self, weight_decay, learning_rate, betas, eps, device_type, adaptive_optimizer=False):
+    def configure_optimizers(self, weight_decay, learning_rate, betas, eps, device_type, adaptive_optimizer=False, enable_fsdp=False):
         # fused_available = 'fused' in inspect.signature(torch.optim.AdamW).parameters
         use_fused = False # fused_available and device_type == 'cuda'
         extra_args = dict(fused=True) if use_fused else dict()
 
-        optim_groups = []
-        embedding_type, hidden_type, kv_type, unembedding_type = self._get_weight_groups(kv=True)
-
-        et_group = {}
-        et_group['params'] = embedding_type
-        et_group['lr_scale'] = self.impl['embedding']['lr_scale'](self.config.mup_multiplier)
-        et_group['wd_scale'] = self.impl['embedding']['wd_scale'](self.config.mup_multiplier)
-        optim_groups.append(et_group)
-
-        ht_group = {}
-        ht_group['params'] = hidden_type
-        ht_group['lr_scale'] = self.impl['hidden']['lr_scale'](self.config.mup_multiplier)
-        ht_group['wd_scale'] = self.impl['hidden']['wd_scale'](self.config.mup_multiplier)
-        optim_groups.append(ht_group)
-
-        kv_group = {}
-        kv_group['params'] = kv_type
-        if self.config.n_head != self.config.n_kv_head:
-            H = self.config.n_kv_head * (self.config.n_embd // self.config.n_head)
-            r = self.config.n_head // self.config.n_kv_head
-            kv_group['lr_scale'] = 1/(self.config.mup_multiplier**(1/2) * H**(1/2)) / r**(1/2)
-            kv_group['wd_scale'] = (self.config.mup_multiplier**(1/2) * H**(1/2)) * r**(1/2)
+        if enable_fsdp:
+            # With FSDP, we need to use a different approach since parameters are flattened
+            # We'll create parameter groups based on parameter names rather than parameter objects
+            def no_decay_params(module, param_name, param):
+                # Exclude embedding layers from weight decay
+                return 'wte' in param_name or 'wpe' in param_name or 'ln_' in param_name or 'bias' in param_name
+            
+            decay_params = []
+            no_decay_params_list = []
+            
+            for name, param in self.named_parameters():
+                if no_decay_params(self, name, param):
+                    no_decay_params_list.append(param)
+                else:
+                    decay_params.append(param)
+            
+            # Apply hidden layer learning rate scaling to both groups
+            hidden_lr_scale = self.impl['hidden']['lr_scale'](self.config.mup_multiplier)
+            
+            optim_groups = [
+                {'params': decay_params, 'weight_decay': weight_decay, 'lr': learning_rate * hidden_lr_scale},
+                {'params': no_decay_params_list, 'weight_decay': 0.0, 'lr': learning_rate * hidden_lr_scale}
+            ]
         else:
-            kv_group['lr_scale'] = self.impl['hidden']['lr_scale'](self.config.mup_multiplier)
-            kv_group['wd_scale'] = self.impl['hidden']['wd_scale'](self.config.mup_multiplier)
-        optim_groups.append(kv_group)
+            # Original parameter grouping approach for non-FSDP
+            optim_groups = []
+            embedding_type, hidden_type, kv_type, unembedding_type = self._get_weight_groups(kv=True)
 
-        ut_group = {}
-        ut_group['params'] = unembedding_type
-        ut_group['lr_scale'] = self.impl['unembedding']['lr_scale'](self.config.mup_multiplier)
-        ut_group['wd_scale'] = self.impl['unembedding']['wd_scale'](self.config.mup_multiplier)
-        optim_groups.append(ut_group)
+            et_group = {}
+            et_group['params'] = embedding_type
+            et_group['lr_scale'] = self.impl['embedding']['lr_scale'](self.config.mup_multiplier)
+            et_group['wd_scale'] = self.impl['embedding']['wd_scale'](self.config.mup_multiplier)
+            optim_groups.append(et_group)
 
-        layer_norms = [p for n, p in self.named_parameters() if 'ln_' in n]
-        layer_norms_group = {
-            'params': layer_norms,
-            'weight_decay': 0.0,  # no weight decay for layer norms
-            'lr_scale': self.impl['normalization']['lr_scale'](self.config.mup_multiplier),      # no scaling for layer norms
-            'wd_scale': 1.0       # no scaling for layer norms
-        }
-        optim_groups.append(layer_norms_group)
+            ht_group = {}
+            ht_group['params'] = hidden_type
+            ht_group['lr_scale'] = self.impl['hidden']['lr_scale'](self.config.mup_multiplier)
+            ht_group['wd_scale'] = self.impl['hidden']['wd_scale'](self.config.mup_multiplier)
+            optim_groups.append(ht_group)
+
+            kv_group = {}
+            kv_group['params'] = kv_type
+
+            if 'kv_layer' in self.impl:
+                r = self.config.n_head // self.config.n_kv_head
+                kv_group['lr_scale'] = self.impl['kv_layer']['lr_scale'](self.config.mup_multiplier, r)
+                kv_group['wd_scale'] = self.impl['kv_layer']['wd_scale'](self.config.mup_multiplier, r)
+            else:
+                kv_group['lr_scale'] = self.impl['hidden']['lr_scale'](self.config.mup_multiplier)
+                kv_group['wd_scale'] = self.impl['hidden']['wd_scale'](self.config.mup_multiplier)
+            optim_groups.append(kv_group)
+
+            ut_group = {}
+            ut_group['params'] = unembedding_type
+            ut_group['lr_scale'] = self.impl['unembedding']['lr_scale'](self.config.mup_multiplier)
+            ut_group['wd_scale'] = self.impl['unembedding']['wd_scale'](self.config.mup_multiplier)
+            optim_groups.append(ut_group)
+
+            layer_norms = [p for n, p in self.named_parameters() if 'ln_' in n]
+            layer_norms_group = {
+                'params': layer_norms,
+                'weight_decay': 0.0,  # no weight decay for layer norms
+                'lr_scale': self.impl['normalization']['lr_scale'](self.config.mup_multiplier),      # no scaling for layer norms
+                'wd_scale': 1.0       # no scaling for layer norms
+            }
+            optim_groups.append(layer_norms_group)
 
         if adaptive_optimizer:
             # use the OWDA optimizer, which is an AdamW variant with dynamic weight decay
@@ -523,11 +528,16 @@ class GPT(nn.Module):
             optimizer = OWDAAdam(optim_groups, lr=learning_rate, betas=betas, eps=eps, weight_decay=weight_decay, **extra_args)
         else:
             optimizer = torch.optim.AdamW(optim_groups, lr=learning_rate, betas=betas, eps=eps, weight_decay=weight_decay, **extra_args)
-            print(f"using fused AdamW: {use_fused}")
+            if enable_fsdp:
+                print(f"using fused AdamW with FSDP: {use_fused}, hidden_lr_scale: {hidden_lr_scale:.6f}")
+            else:
+                print(f"using fused AdamW: {use_fused}")
 
-        for group in optimizer.param_groups:
-            group['weight_decay'] = group['wd_scale'] * group['weight_decay'] * weight_decay
-            group['lr'] = group['lr_scale'] * group['lr']
+        if not enable_fsdp:
+            # Apply MuP scaling only for non-FSDP case
+            for group in optimizer.param_groups:
+                group['weight_decay'] = group.get('wd_scale', 1.0) * group.get('weight_decay', weight_decay)
+                group['lr'] = group.get('lr_scale', 1.0) * group.get('lr', learning_rate)
 
         return optimizer
 
