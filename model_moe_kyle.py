@@ -179,8 +179,9 @@ class CausalSelfAttention(nn.Module):
 
         self.c_q = nn.Linear(config.n_embd, config.n_embd, bias=config.bias)
         # n_embd / n_kv_reps = n_kv_head * head_size
-        self.c_kv = nn.Linear(config.n_embd, 2 * config.n_embd // self.n_kv_reps, bias=config.bias)
-        self.c_kv.kv = True
+        self.c_k = nn.Linear(config.n_embd, config.n_embd // self.n_kv_reps, bias=config.bias)
+        self.c_v = nn.Linear(config.n_embd, config.n_embd // self.n_kv_reps, bias=config.bias)
+        # self.c_kv.kv = True
 
         self.kv_capture = Capture()
 
@@ -238,7 +239,9 @@ class CausalSelfAttention(nn.Module):
 
         # calculate query, key, values for all heads in batch and move head forward to be the batch dim
         q = self.fc_mult * self.c_q(x)
-        k, v = ( self.fc_mult * self.c_kv(x) ).split(self.n_embd // self.n_kv_reps, dim=2)
+        k = self.fc_mult * self.c_k(x)
+        v = self.fc_mult * self.c_v(x)
+        # k, v = ( self.fc_mult * self.c_kv(x) ).split(self.n_embd // self.n_kv_reps, dim=2)
 
         q = self.q_prelayer_norm(q)        
         k = self.k_prelayer_norm(k)
@@ -613,7 +616,8 @@ class GPT(nn.Module):
 
         for block in reversed(self.transformer.h):
             hidden_type.append(block.attn.c_q.weight)
-            kv_type.append(block.attn.c_kv.weight)
+            kv_type.append(block.attn.c_k.weight)
+            kv_type.append(block.attn.c_v.weight)
             hidden_type.append(block.attn.c_proj.weight)
             # handle different FFN types (MLP or MoE)
             if hasattr(block, 'ffn'):
