@@ -58,8 +58,8 @@ sbatch_headers = f"""#!/bin/bash
 #SBATCH --output={orchastrator_dir}/%A_%a.out
 #SBATCH --error={orchastrator_dir}/%A_%a.err
 #SBATCH --mem=8G
-#SBATCH --partition=main
-#SBATCH --qos=k2m
+#SBATCH --partition=lowprio
+#SBATCH --qos=lowprio
 #SBATCH --distribution=pack
 
 
@@ -111,6 +111,7 @@ do
 done < <(echo "$CONFIG_JSON" | jq -r 'to_entries[] | .key + "=" + (.value | @json)')
 
 ARGS+=" --sbatch_logging_dir {logging_dir}"
+ARGS+=" --out_dir {logging_dir}/ckpts/"
 
 """
 

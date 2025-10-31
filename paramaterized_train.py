@@ -43,6 +43,7 @@ parser.add_argument('--sbatch_logging_dir', type=str, default='slurm_logs')
 parser.add_argument('--sbatch_mem', type=int, default=50)  # Memory in GB
 parser.add_argument('--partition', type=str, default='lowprio')
 parser.add_argument('--qos', type=str, default='lowprio')
+parser.add_argument('--reservation', type=str, default=None)  # Reservation name if needed
 
 # Model testbed arguments
 parser.add_argument('--out_dir', type=str, default=f'model_training/{now}')
@@ -51,7 +52,7 @@ parser.add_argument('--wandb_run_name', type=str, default='gpt')
 parser.add_argument('--wandb_project', type=str, default=None)
 parser.add_argument('--backend', type=str, default='nccl')
 parser.add_argument('--device', type=str, default='cuda')
-parser.add_argument('--dtype', type=str, default='float16')
+parser.add_argument('--dtype', type=str, default='bfloat16')
 parser.add_argument('--compile', action='store_true')
 parser.add_argument('--coord_check', action='store_true')
 
@@ -61,6 +62,7 @@ parser.add_argument('--log_interval', type=int, default=1)
 parser.add_argument('--avg_interval', type=int, default=30)
 parser.add_argument('--eval_iters', type=int, default=300)
 parser.add_argument('--eval_only', action='store_true')
+parser.add_argument('--enable_checkpointing', action='store_true', help='Enable saving model checkpoints')
 
 # Initialization and dataset
 parser.add_argument('--init_from', type=str, default='scratch')
@@ -70,6 +72,7 @@ parser.add_argument('--block_size', type=int, default=1024)
 # Model dynamics arguments. By default max_iters is determined by the prespecified TPP
 parser.add_argument('--batch_size', type=int, default=64)
 parser.add_argument('--gradient_accumulation_steps', type=int, default=1)
+parser.add_argument('--eps', type=float, default=1e-12)
 parser.add_argument('--max_iters', type=int, default=None)
 parser.add_argument('--decay_profile', type=str, default='cosine')  # ['cosine', 'wsd', 'wsd_cosine_tail']
 parser.add_argument('--lr_decay_iters', type=int, default=None)
@@ -113,6 +116,14 @@ parser.add_argument('--decay_lr', action='store_true')
 
 # FSDP
 parser.add_argument('--enable_fsdp', action='store_true', help='Enable Fully Sharded Data Parallel (FSDP)', default=False)
+
+# -------------------------
+# -------------------------
+# RoPE (Rotary Position Embedding) arguments
+# -------------------------
+parser.add_argument('--use_rope', action='store_true', help='Enable Rotary Position Embedding (RoPE)', default=False)
+parser.add_argument('--rope_theta', type=float, default=10000.0, help='RoPE theta parameter for frequency scaling')
+# -------------------------
 
 # -------------------------
 # Mixture-of-Experts (MoE) arguments
@@ -222,6 +233,7 @@ shell_script = f"""#!/bin/bash
 #SBATCH --mem={args.sbatch_mem}G
 {f'#SBATCH --partition={args.partition}' if args.partition is not None else ''}
 {f'#SBATCH --qos={args.qos}' if args.qos is not None else ''}
+{f'#SBATCH --reservation={args.reservation}' if args.reservation is not None else ''}
 #SBATCH --distribution=pack
 
 {dist_args}
@@ -236,6 +248,7 @@ TRAINING_ARGS=(
     --avg_interval={args.avg_interval}
     --eval_iters={args.eval_iters}
     --eval_only={args.eval_only}
+    --enable_checkpointing={args.enable_checkpointing}
     --init_from='{args.init_from}'
     --dataset='{args.dataset}'
     --gradient_accumulation_steps={args.gradient_accumulation_steps}
@@ -261,6 +274,7 @@ TRAINING_ARGS=(
     --grad_clip={args.grad_clip}
     --decay_lr={args.decay_lr}
     --complete_p_layers={args.complete_p_layers}
+    --eps={args.eps}
     --mup={args.mup}
     --mup_multiplier={args.mup_multiplier}
     --seed={args.seed}
@@ -281,6 +295,8 @@ TRAINING_ARGS=(
     --wd_warmup_iters={args.wd_warmup_iters}
     --wd_anneal_iters={args.wd_anneal_iters}
     --adaptive_optimizer={args.adaptive_optimizer}
+    --use_rope={args.use_rope}
+    --rope_theta={args.rope_theta}
     --use_moe={args.use_moe}
     --num_experts={args.num_experts}
     --moe_ffn_hidden_size={args.moe_ffn_hidden_size}

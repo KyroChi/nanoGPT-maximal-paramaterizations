@@ -27,13 +27,11 @@ import torch
 from contextlib import nullcontext
 from megatron.core.datasets.indexed_dataset import _IndexReader, IndexedDataset
 from torch.distributed import destroy_process_group, init_process_group
-from torch.distributed.fsdp import fully_shard, FSDPModule
 from torch.nn.parallel import DistributedDataParallel as DDP
 
-# from model import GPTConfig, GPT
-from model_moe_kyle import GPTConfig, GPT
+from torch.distributed.fsdp import fully_shard, FSDPModule
 
-# from model import GPTConfig, GPT
+from model import GPTConfig, GPT
 from mup_implementations import (
     impl_dict
 )
@@ -55,7 +53,6 @@ log_interval = 1
 eval_iters = 200
 eval_only = False # if True, script exits right after the first eval
 always_save_checkpoint = True # if True, always save a checkpoint after each eval
-enable_checkpointing = False # if True, enable saving checkpoints during and at end of training
 init_from = 'scratch' # 'scratch' or 'resume' or 'gpt2*'
 # wandb logging
 wandb_log = False # disabled by default
@@ -91,10 +88,12 @@ lr_decay_iters = 600000 # should be ~= max_iters per Chinchilla
 min_lr = 6e-5 # minimum learning rate, should be ~= learning_rate/10 per Chinchilla
 # DDP settings
 backend = 'nccl' # 'nccl', 'gloo', etc.
+use_fsdp = True
 # system
 device = 'cuda' # examples: 'cpu', 'cuda', 'cuda:0', 'cuda:1' etc., or try 'mps' on macbooks
 # dtype = 'bfloat16' if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else 'float16' # 'float32', 'bfloat16', or 'float16', the latter will auto implement a GradScaler
 dtype = 'float32'
+compile = True # use PyTorch 2.0 to compile the model to be faster
 mup = True
 mup_multiplier = 1.0
 # impl = tpv_left_impl
@@ -112,31 +111,13 @@ complete_p_layers = False
 slurm_job_id = 0
 slurm_array_task_id = 0
 anneal_wd = False
-min_wd = 0.0 # minimum weight decay for annealing
 wd_warmup_iters = 1000
 wd_anneal_iters = 1000
-# -------- RoPE-related knobs ----------
-use_rope: bool = False
-rope_theta: float = 10000.0
-# -------- MoE-related knobs ----------
-use_moe: bool = False
-num_experts: int = 0
-router_topk: int = 8
-moe_ffn_hidden_size: int = 128
-moe_seq_aux_loss_coeff: float = 1e-4
-moe_ffn_mup_multiplier: float = 1.0
-moe_null_expert_bias: float = 0.0
-moe_random_router: bool = False
-# -------- FSDP ----------
-enable_fsdp = False
-compile = True # use PyTorch 2.0 to compile the model to be faster
 # -----------------------------------------------------------------------------
 config_keys = [k for k,v in globals().items() if not k.startswith('_') and isinstance(v, (int, float, bool, str))]
 exec(open('configurator.py').read()) # overrides from command line or config file
 config = {k: globals()[k] for k in config_keys} # will be useful for logging
 # -----------------------------------------------------------------------------
-
-assert not (enable_fsdp and compile), "FSDP and PyTorch 2.0 compilation are mutually exclusive, please disable one of them."
 
 os.makedirs(out_dir, exist_ok=True)
 seed_everything(seed)
@@ -205,10 +186,6 @@ if dataset != 'slim_pajama':
         return x, y
 else:
     slim_pj_cropped_vocab_size = 50257
-    slim_pj_full_vocab_size = 250222
-
-    compression_ratio = slim_pj_full_vocab_size // slim_pj_cropped_vocab_size
-
     path_prefix = "/mnt/sharefs/data/pretrain_tokenized/SlimPajama-627B_250k_tokenized/merged/slimpajama-train-chunk1"
     slimpj_dataset = IndexedDataset(path_prefix)
 
@@ -244,22 +221,11 @@ else:
 
                 data_buffer = data_buffer[1:]
 
-        # x = torch.tensor(X_batch, dtype=torch.long)
-        # y = torch.tensor(Y_batch, dtype=torch.long)
-
-        x = torch.tensor(X_batch) / compression_ratio
-        y = torch.tensor(Y_batch) / compression_ratio
-
-        x = x.to(dtype=torch.long)
-        y = y.to(dtype=torch.long)
+        x = torch.tensor(X_batch, dtype=torch.long)
+        y = torch.tensor(Y_batch, dtype=torch.long)
 
         x = x.clip(0, slim_pj_cropped_vocab_size - 1)
         y = y.clip(0, slim_pj_cropped_vocab_size - 1)
-
-        # print(f"shapes: {x.shape}, {y.shape}")
-
-        # x = torch.div(x, compression_ratio, rounding_mode='floor')
-        # y = torch.div(y, compression_ratio, rounding_mode='floor')
 
         if device_type == 'cuda':
             # pin arrays x,y, which allows us to move them to GPU asynchronously (non_blocking=True)
@@ -292,34 +258,11 @@ else:
 
 # model init
 # model init
-model_args = dict(
-    n_layer=n_layer, 
-    n_head=n_head, 
-    n_kv_head=n_kv_head, 
-    n_embd=n_embd, 
-    block_size=block_size,
-    bias=bias, 
-    vocab_size=None, 
-    dropout=dropout, 
-    mup=mup, 
-    mup_multiplier=mup_multiplier, 
-    init_std=init_std,
-    impl=ptimpl, 
-    normalization=normalization, 
-    complete_p_layers=complete_p_layers,
-    q_prelayer_normalization=q_prelayer_normalization, 
-    k_prelayer_normalization=k_prelayer_normalization,
-    use_rope=use_rope,
-    rope_theta=rope_theta,
-    # use_moe=use_moe,
-    # num_experts=num_experts,
-    # moe_ffn_hidden_size=moe_ffn_hidden_size,
-    # router_topk=router_topk,
-    # moe_seq_aux_loss_coeff=moe_seq_aux_loss_coeff,
-    # moe_ffn_mup_multiplier=moe_ffn_mup_multiplier,
-    # moe_null_expert_bias=moe_null_expert_bias,
-    # moe_random_router=moe_random_router,
-)
+model_args = dict(n_layer=n_layer, n_head=n_head, n_kv_head=n_kv_head, n_embd=n_embd, block_size=block_size,
+                  bias=bias, vocab_size=None, dropout=dropout, mup=mup, 
+                  mup_multiplier=mup_multiplier, init_std=init_std,
+                  impl=ptimpl, normalization=normalization, complete_p_layers=complete_p_layers,
+                  q_prelayer_normalization=q_prelayer_normalization, k_prelayer_normalization=k_prelayer_normalization,)
 
 if init_from == 'scratch':
     # init a new model from scratch
@@ -410,42 +353,30 @@ model.to(device)
 # initialize a GradScaler. If enabled=False scaler is a no-op
 scaler = torch.cuda.amp.GradScaler(enabled=(dtype == 'float16'))
 
-# compile the model
-if compile:
-    print("compiling the model... (takes a ~minute)")
-    unoptimized_model = model
-    model = torch.compile(model, mode='max-autotune') # requires PyTorch 2.0
-
-# wrap model into DDP container
-if ddp:
-    # MoE can leave some expert parameters unused on a given forward pass which
-    # breaks the default DDP reduction. Enable find_unused_parameters so DDP
-    # tolerates parameters that do not participate in every forward.
-    if enable_fsdp: 
-        for layer in model.transformer.h:
-            try:
-                fully_shard(layer)
-            except Exception as e:
-                print(f"Failed to fully shard layer {layer}: {e}")
-        fully_shard(model)
-        assert isinstance(model, FSDPModule)
-    else:
-        model = DDP(model, device_ids=[ddp_local_rank], find_unused_parameters=False)
-
 # optimizer
-if ddp and not enable_fsdp:
-    raw_model = model.module # unwrap DDP
-else:
-    raw_model = model
-
-optimizer = raw_model.configure_optimizers(
+optimizer = model.configure_optimizers(
     weight_decay, learning_rate, (beta1, beta2), eps, device_type,
     adaptive_optimizer=adaptive_optimizer,
-    enable_fsdp=enable_fsdp,
+    enable_fsdp=use_fsdp,
 )
 if init_from == 'resume':
     optimizer.load_state_dict(checkpoint['optimizer'])
 checkpoint = None # free up memory
+
+# compile the model
+if compile:
+    print("compiling the model... (takes a ~minute)")
+    unoptimized_model = model
+    model = torch.compile(model) # requires PyTorch 2.0
+
+# wrap model into DDP container
+if ddp:
+    if use_fsdp:
+        print("wrapping model into FSDP container")
+        model = FSDPModule(model, auto_wrap_policy=fully_shard, device_id=torch.device(device))
+    else:
+        exit(1)
+        model = DDP(model, device_ids=[ddp_local_rank])
 
 # helps estimate an arbitrarily accurate loss over either split using many batches
 @torch.no_grad()
@@ -457,10 +388,7 @@ def estimate_loss():
         for k in range(eval_iters):
             X, Y = get_batch(split)
             with ctx:
-                if use_moe:
-                    logits, loss, _, _ = model(X, Y)
-                else:
-                    logits, loss = model(X, Y)
+                logits, loss = model(X, Y)
             losses[k] = loss.item()
         out[split] = losses.mean()
     model.train()
@@ -506,9 +434,9 @@ def get_wd_annealed(it):
     elif it < wd_warmup_iters + wd_anneal_iters:
         decay_ratio = (it - wd_warmup_iters) / wd_anneal_iters
         assert 0 <= decay_ratio <= 1
-        return weight_decay - (weight_decay - min_wd) * decay_ratio
+        return weight_decay * (1.0 - decay_ratio)
     else:
-        return min_wd
+        return 0.0
 
 def get_wd_const(it):
     return weight_decay
@@ -543,10 +471,9 @@ tiwd = 0 # total integrated weight decay
 tilr = 0 # total integrated learning rate
 # training loop
 X, Y = get_batch('train') # fetch the very first batch
-global_time = time.time()
 t0 = time.time()
 local_iter_num = 0 # number of iterations in the lifetime of this process
-raw_model = model.module if ddp and not enable_fsdp else model # unwrap DDP container if needed
+raw_model = model.module if ddp else model # unwrap DDP container if needed
 running_mfu = -1.0
 while True:
 
@@ -560,23 +487,22 @@ while True:
         param_group['weight_decay'] = wd * param_group.get('wd_scale', 1.0)
 
     # evaluate the loss on train/val sets and write checkpoints
-    if iter_num % eval_interval == 0:
+    if iter_num % eval_interval == 0 and master_process:
         losses = estimate_loss()
         print(f"step {iter_num}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
-        if master_process:
-            if wandb_log:
-                wandb.log({
-                    "iter": iter_num,
-                    "train/loss": losses['train'],
-                    "val/loss": losses['val'],
-                    "lr": lr,
-                    "wd": wd,
-                    "tiwd": tiwd,
-                    "tilr": tilr,
-                    "base_lr": learning_rate,
-                    "mfu": running_mfu*100, # convert to percentage
-                })
-        if enable_checkpointing and (losses['val'] < best_val_loss or always_save_checkpoint):
+        if wandb_log:
+            wandb.log({
+                "iter": iter_num,
+                "train/loss": losses['train'],
+                "val/loss": losses['val'],
+                "lr": lr,
+                "wd": wd,
+                "tiwd": tiwd,
+                "tilr": tilr,
+                "base_lr": learning_rate,
+                "mfu": running_mfu*100, # convert to percentage
+            })
+        if losses['val'] < best_val_loss or always_save_checkpoint:
             best_val_loss = losses['val']
             if iter_num > 0:
                 checkpoint = {
@@ -587,25 +513,13 @@ while True:
                     'best_val_loss': best_val_loss,
                     'config': config,
                 }
-                if master_process:
-                    print(f"saving checkpoint to {out_dir}")
-                    torch.save(checkpoint, os.path.join(out_dir, f'ckpt_{iter_num}.pt'))
-                    print(f"saved checkpoint to {out_dir}/ckpt_{iter_num}.pt")
-
-            # sync all ranks after checkpoint logic
-            if ddp:
-                torch.distributed.barrier()
+                print(f"saving checkpoint to {out_dir}")
+                # torch.save(checkpoint, os.path.join(out_dir, 'ckpt.pt'))
     if iter_num == 0 and eval_only:
         break
 
     # forward backward update, with optional gradient accumulation to simulate larger batch size
     # and using the GradScaler if data type is float16
-    # accumulate MoE aux loss across micro-steps to log properly
-    if use_moe:
-        moe_aux_accum = torch.tensor(0.0, device=device)
-    else:
-        moe_aux_accum = None
-
     for micro_step in range(gradient_accumulation_steps):
         if ddp:
             # in DDP training we only need to sync gradients at the last micro step.
@@ -614,20 +528,12 @@ while True:
             # looking at the source of that context manager, it just toggles this variable
             model.require_backward_grad_sync = (micro_step == gradient_accumulation_steps - 1)
         with ctx:
-            if use_moe:
-                logits, loss, moe_aux, lm_loss = model(X, Y)
-                # detach and accumulate the raw aux (sum over micro-steps). Do not .item() here
-                # moe_aux_accum = moe_aux_accum + moe_aux.detach().to(device)
-                moe_aux = moe_aux.detach() / gradient_accumulation_steps
-                lm_loss = lm_loss.detach() / gradient_accumulation_steps
-            else:
-                logits, loss = model(X, Y)
+            logits, loss = model(X, Y)
             loss = loss / gradient_accumulation_steps # scale the loss to account for gradient accumulation
         # immediately async prefetch next batch while model is doing the forward pass on the GPU
         X, Y = get_batch('train')
         # backward pass, with gradient scaling if training in fp16
         scaler.scale(loss).backward()
-
     # clip the gradient
     if grad_clip != 0.0:
         scaler.unscale_(optimizer)
@@ -646,9 +552,6 @@ while True:
         # get loss as float. note: this is a CPU-GPU sync point
         # scale up to undo the division above, approximating the true total loss (exact would have been a sum)
         lossf = loss.item() * gradient_accumulation_steps
-        if use_moe:
-            moe_auxf = moe_aux * gradient_accumulation_steps
-            lm_lossf = lm_loss * gradient_accumulation_steps
         if local_iter_num >= 5: # let the training loop settle a bit
             mfu = raw_model.estimate_mfu(batch_size * gradient_accumulation_steps, dt)
             running_mfu = mfu if running_mfu == -1.0 else 0.9*running_mfu + 0.1*mfu
@@ -657,45 +560,23 @@ while True:
         avg_loss[avg_idx] = lossf
         avg_idx = (avg_idx + 1) % avg_interval
 
-        if wandb_log:
+        if wandb_log and master_process:
             # Iterate through all the weights and get the F norm of them
             layer_norm_data = {}
-            if not enable_fsdp:
-                # TODO: Does this break things when we use FSDP?
-                # I.e. no longer iterate through named params?
-                for name, param in model.named_parameters():
-                    if param.grad is not None:
-                        layer_norm_data[f"grad_norm/{name}"] = param.grad.norm().item()
-                        layer_norm_data[f"norm/{name}"] = param.norm().item()
-
-            moe_data = {}
-            if use_moe:
-                moe_data = {
-                    "moe_aux_loss": moe_auxf,
-                    "train/lm_loss": lm_lossf,
-                }
-
-            perf_data = {}
-            if local_iter_num >= 4: # let the training loop settle a bit
-                tokens_per_iter = gradient_accumulation_steps * batch_size * block_size
-                perf_data = {
-                    "perf/throughput": tokens_per_iter / dt if dt > 0 else 0,
-                    "perf/mfu": running_mfu * 100, # convert to percentage
-                    "perf/iters_per_sec": 1 / dt if dt > 0 else 0,
-                    "perf/average_iters_per_sec": iter_num / (time.time() - global_time) if iter_num > 0 else 0,
-                }
+            for name, param in model.named_parameters():
+                if param.grad is not None:
+                    layer_norm_data[f"norm/{name}"] = param.grad.norm().item()
 
             wandb.log({
                 "iter": iter_num,
                 "train/loss": lossf,
+                "mfu": running_mfu * 100, # convert to percentage
                 "lr": lr,
                 "tiwd": tiwd,
                 "tilr": tilr,
                 "wd": wd,
                 "train/avg_loss": sum(avg_loss) / len(avg_loss),
                 **layer_norm_data,
-                **moe_data,
-                **perf_data,
                 # "abs_grad_norm": abs_grad_norm,
             })
 
@@ -708,19 +589,6 @@ while True:
     # termination conditions
     if iter_num > max_iters:
         break
-
-if enable_checkpointing:
-    checkpoint = {
-        'model': raw_model.state_dict(),
-        'optimizer': optimizer.state_dict(),
-        'model_args': {**model_args, 'impl': impl},
-        'iter_num': iter_num,
-        'best_val_loss': best_val_loss,
-        'config': config
-    }
-    print(f"saving checkpoint to {out_dir}")
-    torch.save(checkpoint, os.path.join(out_dir, f'ckpt_final_{wandb_run_name}.pt'))
-    print(f"saved checkpoint to {out_dir}/ckpt_final_{wandb_run_name}.pt")
 
 if coord_check:
     import datetime

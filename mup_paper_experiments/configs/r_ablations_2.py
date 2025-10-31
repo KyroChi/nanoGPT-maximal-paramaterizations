@@ -6,13 +6,16 @@
 # python crawl_wandb.py --entity krchickering-uc-davis --project ablate-gqa-repetition-kyle-impl --output-dir /mnt/weka/home/kyle.chickering/code/nanoGPT/mup_paper_experiments/results/ablations/ablate-gqa-repetition-kyle-impl
 # python crawl_wandb.py --entity krchickering-uc-davis --project ablate-gqa-repetition-kyle-impl-2 --output-dir /mnt/weka/home/kyle.chickering/code/nanoGPT/mup_paper_experiments/results/ablations/ablate-gqa-repetition-kyle-impl-2
 
+# python crawl_wandb.py --entity krchickering-uc-davis --project ablate-gqa-repetition-kyle-impl-5 --output-dir /mnt/weka/home/kyle.chickering/code/nanoGPT/mup_paper_experiments/results/ablations/ablate-gqa-repetition-kyle-impl-5
+# python crawl_wandb.py --entity krchickering-uc-davis --project ablate-gqa-repetition-kyle-impl-6 --output-dir /mnt/weka/home/kyle.chickering/code/nanoGPT/mup_paper_experiments/results/ablations/ablate-gqa-repetition-kyle-impl-6
+
 import numpy as np
 from copy import deepcopy 
 
 PROD = True
 
 WEIGHT_DECAY = 0.05
-WANDB_PROJECT = 'ablate-gqa-repetition-kyle-impl-2'
+WANDB_PROJECT = 'ablate-gqa-repetition-kyle-impl-6'
 
 config = {
     'n_embd': 384,
@@ -31,8 +34,9 @@ config = {
     'avg_interval': 120,
     'sbatch_mem': 256,
     'dataset': 'openwebtext',
-    'partition': 'main',
-    'qos': 'k2m'
+    'partition': 'lowprio',
+    'qos': 'lowprio',
+    'reservation': 'moe',
 }
 
 # Keep everything pinned to 5 TPP.
@@ -62,7 +66,8 @@ learning_rate_samples = 11 if PROD else 1
 learning_rates = [10**p for p in np.linspace(-3, -1.75, learning_rate_samples)] if PROD else [1e-2]
 
 seeds = [42, 43, 44] if PROD else [42]
-impls = ['kyle_impl'] #['tpv_left_impl_new_kv_2', 'standard_param_impl'] #'tpv_left_impl_new_kv_2', 'mengxi_impl', 'standard_param_impl']
+# impls = ['standard_param_impl', 'xllm_impl', 'kyle_impl'] #['tpv_left_impl_new_kv_2', 'standard_param_impl'] #'tpv_left_impl_new_kv_2', 'mengxi_impl', 'standard_param_impl']
+impls = ['tpv_left_impl_no_kv', 'tpv_left_impl_new_kv_2']
 
 configs = []
 for seed in seeds:

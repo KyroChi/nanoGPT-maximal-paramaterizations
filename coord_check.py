@@ -274,8 +274,12 @@ if coord_check:
         hook = attn.c_q.register_forward_hook(forward_hook)
         hooks.append(hook)
 
-        forward_hook = get_hooks(data, f"attn.c_kv.{i}")
-        hook = attn.c_kv.register_forward_hook(forward_hook)
+        forward_hook = get_hooks(data, f"attn.c_k.{i}")
+        hook = attn.c_k.register_forward_hook(forward_hook)
+        hooks.append(hook)
+
+        forward_hook = get_hooks(data, f"attn.c_v.{i}")
+        hook = attn.c_v.register_forward_hook(forward_hook)
         hooks.append(hook)
 
         forward_hook = get_hooks(data, f"attn.c_proj.{i}")
@@ -389,7 +393,8 @@ while True:
     scaler.update()
 
     abs_grad_norm = ( model.transformer.h[-1].attn.c_q.weight.grad.abs().mean().item() +
-                      model.transformer.h[-1].attn.c_kv.weight.grad.abs().mean().item() ) / 2
+                      model.transformer.h[-1].attn.c_k.weight.grad.abs().mean().item() +
+                      model.transformer.h[-1].attn.c_v.weight.grad.abs().mean().item() ) / 2
 
     # flush the gradients as soon as we can, no need for this memory anymore
     optimizer.zero_grad(set_to_none=True)
@@ -416,7 +421,7 @@ while True:
     iter_num += 1
     local_iter_num += 1
 
-    X, Y = get_batch('train') 
+    # X, Y = get_batch('train') 
 
     # termination conditions
     if iter_num > max_iters:

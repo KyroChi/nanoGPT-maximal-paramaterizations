@@ -108,7 +108,7 @@ tpv_left_impl_failing_hidden = {
     },
     'hidden': {
         'init_std':             lambda m: 1 / m**(1/2),
-        'lr_scale':             lambda m: 1 / m**(1.5),
+        'lr_scale':             lambda m: 0,
         'wd_scale':             lambda m: m,
         'output_multiplier':    lambda m: 1.0
     },
@@ -191,6 +191,72 @@ tpv_left_impl_new_kv = {
     'depth_scale':              lambda L: 1 / L
 }
 
+# tpv_left_impl_new_kv_2 = {
+#     'name':                     'TPV-L, new KV (muP)',
+#     'embedding': {
+#         'init_std':             lambda m: 1.0,
+#         'lr_scale':             lambda m: 1.0,
+#         'wd_scale':             lambda m: 0.0,
+#         'output_multiplier':    lambda m: 1.0
+#     },
+#     'hidden': {
+#         'init_std':             lambda m: 1 / m**(1/2),
+#         'lr_scale':             lambda m: 1 / m,
+#         'wd_scale':             lambda m: m,
+#         'output_multiplier':    lambda m: 1.0
+#     },
+#     'kv_layer': {
+#         'init_std':             lambda m, r: 1 / m**(1/2),
+#         'lr_scale':             lambda m, r: ( 2**(1/2) + r**(1/2) ) / ( (2**(1/2) + 1) * m ),
+#         'wd_scale':             lambda m, r: ( (2**(1/2) + 1) * m ) / ( 2**(1/2) + r**(1/2) ),
+#         'output_multiplier':    lambda m, r: 1.0
+#     },
+#     'unembedding': {
+#         'init_std':             lambda m: 1.0,
+#         'lr_scale':             lambda m: 1.0,
+#         'wd_scale':             lambda m: 1.0,
+#         'output_multiplier':    lambda m: 1 / m
+#     },
+#     'normalization': {
+#         'lr_scale':             lambda m: 1.0,
+#     },
+#     'attention_scale':          lambda d: 1 / d,
+#     'depth_scale':              lambda L: 1 / L
+# }
+
+# tpv_left_impl_new_kv_2 = {
+#     'name':                     'TPV-L, new KV (muP)',
+#     'embedding': {
+#         'init_std':             lambda m: 1.0,
+#         'lr_scale':             lambda m: 1.0,
+#         'wd_scale':             lambda m: 0.0,
+#         'output_multiplier':    lambda m: 1.0
+#     },
+#     'hidden': {
+#         'init_std':             lambda m: 1 / m**(1/2),
+#         'lr_scale':             lambda m: 1 / m,
+#         'wd_scale':             lambda m: m,
+#         'output_multiplier':    lambda m: 1.0
+#     },
+#     'kv_layer': {
+#         'init_std':             lambda m, r: 1 / m**(1/2),
+#         'lr_scale':             lambda m, r: ( 1 + r**(1/2) ) / ( 2 * m ),
+#         'wd_scale':             lambda m, r: ( 2 * m ) / ( 1 + r**(1/2) ),
+#         'output_multiplier':    lambda m, r: 1.0
+#     },
+#     'unembedding': {
+#         'init_std':             lambda m: 1.0,
+#         'lr_scale':             lambda m: 1.0,
+#         'wd_scale':             lambda m: 1.0,
+#         'output_multiplier':    lambda m: 1 / m
+#     },
+#     'normalization': {
+#         'lr_scale':             lambda m: 1.0,
+#     },
+#     'attention_scale':          lambda d: 1 / d,
+#     'depth_scale':              lambda L: 1 / L
+# }
+
 tpv_left_impl_new_kv_2 = {
     'name':                     'TPV-L, new KV (muP)',
     'embedding': {
@@ -207,8 +273,8 @@ tpv_left_impl_new_kv_2 = {
     },
     'kv_layer': {
         'init_std':             lambda m, r: 1 / m**(1/2),
-        'lr_scale':             lambda m, r: ( 2**(1/2) + r**(1/2) ) / ( 2**(1/2) * m ),
-        'wd_scale':             lambda m, r: ( 2**(1/2) * m ) / ( 2**(1/2) + r**(1/2) ),
+        'lr_scale':             lambda m, r: ( 1 + r**(1/2) ) / ( m ),
+        'wd_scale':             lambda m, r: ( m ) / ( 1 + r**(1/2) ),
         'output_multiplier':    lambda m, r: 1.0
     },
     'unembedding': {

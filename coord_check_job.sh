@@ -13,16 +13,13 @@ now=$(date +%Y-%m-%d_%H-%M-%S)
 out_dir=coord-check-impl/${now}
 mkdir -p ${out_dir}
 
-head_size=32
+head_size=64
 
 embeds=(256 384 512 640 768 896 1024 1280 1536 2048)
 for seed in {0..5}; do
     for emb in "${embeds[@]}"; do
         mup_multiplier=$(echo "scale=2; $emb / 256" | bc)
         n_heads=$(( emb / head_size ))
-        n_kv_heads=8 #$(( n_heads / 2 ))
-        # n_kv_heads is random number between 2 and n_heads
-        # n_kv_heads=$(( RANDOM % (n_heads - 1) + 2 ))
 
         echo "mup_muliplier: ${mup_multiplier}, n_heads: ${n_heads}, emb: ${emb}, seed: ${seed}"
         srun python coord_check.py \
@@ -44,8 +41,8 @@ for seed in {0..5}; do
             --dropout=0.0 \
             --bias=False \
             --init_std=0.02 \
-            --learning_rate=4e-5 \
-            --eps=1e-4 \
+            --learning_rate=5e-4 \
+            --eps=1e-10 \
             --max_iters=4 \
             --weight_decay=0.0 \
             --beta1=0.9 \
@@ -59,6 +56,6 @@ for seed in {0..5}; do
             --device='cuda' \
             --dtype='bfloat16' \
             --compile=False \
-            --impl='tpv_left_impl'
+            --impl='tpv_left_impl_failing_hidden'
     done
 done
