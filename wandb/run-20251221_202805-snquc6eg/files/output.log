@@ -1,0 +1,34 @@
+step 0: train loss 10.9878, val loss 10.9876
+/weka/kyle/research/nanoGPT-moe-research/.venv/lib/python3.11/site-packages/torch/distributed/distributed_c10d.py:4876: UserWarning: barrier(): using the device under current context. You can specify `device_id` in `init_process_group` to mute this warning.
+  warnings.warn(  # warn only once
+iter 0: loss 11.0018, aux_loss 0.0508, time 32004.77ms, mfu -100.00%, throughput 0.015 MT/s
+iter 10: loss 10.8592, aux_loss 0.0508, time 1051.44ms, mfu 28.86%, throughput 0.467 MT/s
+iter 20: loss 10.3999, aux_loss 0.0516, time 1099.37ms, mfu 28.26%, throughput 0.447 MT/s
+iter 30: loss 9.8215, aux_loss 0.0548, time 1192.32ms, mfu 26.80%, throughput 0.412 MT/s
+iter 40: loss 9.5370, aux_loss 0.0576, time 1244.28ms, mfu 25.38%, throughput 0.395 MT/s
+iter 50: loss 9.3905, aux_loss 0.0579, time 1262.14ms, mfu 24.38%, throughput 0.389 MT/s
+iter 60: loss 8.9314, aux_loss 0.0596, time 1270.74ms, mfu 23.99%, throughput 0.387 MT/s
+iter 70: loss 8.8686, aux_loss 0.0607, time 1269.80ms, mfu 23.83%, throughput 0.387 MT/s
+iter 80: loss 8.5481, aux_loss 0.0621, time 1266.49ms, mfu 23.82%, throughput 0.388 MT/s
+iter 90: loss 8.2831, aux_loss 0.0617, time 1267.86ms, mfu 23.77%, throughput 0.388 MT/s
+iter 100: loss 8.1326, aux_loss 0.0597, time 1248.97ms, mfu 23.94%, throughput 0.394 MT/s
+iter 110: loss 7.7466, aux_loss 0.0578, time 1244.55ms, mfu 24.14%, throughput 0.395 MT/s
+iter 120: loss 7.6481, aux_loss 0.0557, time 1229.61ms, mfu 24.33%, throughput 0.400 MT/s
+iter 130: loss 7.3678, aux_loss 0.0552, time 1215.66ms, mfu 24.61%, throughput 0.404 MT/s
+iter 140: loss 7.2389, aux_loss 0.0549, time 1189.64ms, mfu 24.97%, throughput 0.413 MT/s
+iter 150: loss 7.1488, aux_loss 0.0544, time 1180.91ms, mfu 25.28%, throughput 0.416 MT/s
+iter 160: loss 7.0195, aux_loss 0.0540, time 1159.82ms, mfu 25.67%, throughput 0.424 MT/s
+iter 170: loss 6.9887, aux_loss 0.0533, time 1143.87ms, mfu 26.04%, throughput 0.430 MT/s
+iter 180: loss 6.8242, aux_loss 0.0529, time 1123.61ms, mfu 26.44%, throughput 0.437 MT/s
+iter 190: loss 6.8978, aux_loss 0.0526, time 1112.81ms, mfu 26.78%, throughput 0.442 MT/s
+iter 200: loss 6.6525, aux_loss 0.0525, time 1105.49ms, mfu 27.14%, throughput 0.445 MT/s
+iter 210: loss 6.9736, aux_loss 0.0524, time 1093.88ms, mfu 27.37%, throughput 0.449 MT/s
+iter 220: loss 6.5805, aux_loss 0.0524, time 1081.06ms, mfu 27.61%, throughput 0.455 MT/s
+iter 230: loss 6.6043, aux_loss 0.0522, time 1087.39ms, mfu 27.79%, throughput 0.452 MT/s
+iter 240: loss 6.2301, aux_loss 0.0523, time 1082.40ms, mfu 27.85%, throughput 0.454 MT/s
+iter 250: loss 6.3907, aux_loss 0.0522, time 1083.07ms, mfu 27.92%, throughput 0.454 MT/s
+iter 260: loss 6.2156, aux_loss 0.0521, time 1080.51ms, mfu 27.93%, throughput 0.455 MT/s
+iter 270: loss 6.4378, aux_loss 0.0523, time 1082.49ms, mfu 27.90%, throughput 0.454 MT/s
+iter 280: loss 6.1900, aux_loss 0.0525, time 1084.00ms, mfu 27.92%, throughput 0.453 MT/s
+iter 290: loss 5.9905, aux_loss 0.0522, time 1079.50ms, mfu 27.97%, throughput 0.455 MT/s
+iter 300: loss 6.0543, aux_loss 0.0522, time 1076.54ms, mfu 27.99%, throughput 0.457 MT/s

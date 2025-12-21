@@ -1,0 +1,134 @@
+{
+  "os":  "Linux-5.15.0-1062-aws-x86_64-with-glibc2.31",
+  "python":  "CPython 3.11.10",
+  "startedAt":  "2025-12-21T20:19:34.759421Z",
+  "args":  [
+    "config/train_gpt2_moe_124m.py"
+  ],
+  "program":  "/weka/kyle/research/nanoGPT-moe-research/train.py",
+  "codePath":  "train.py",
+  "codePathLocal":  "train.py",
+  "git":  {
+    "remote":  "git@github.com:KyroChi/nanoGPT-maximal-paramaterizations.git",
+    "commit":  "faba4243ebb7e0adfbf9e7d6a2961f264b0d84f9"
+  },
+  "email":  "kyle@lumalabs.ai",
+  "root":  "/weka/kyle/research/nanoGPT-moe-research",
+  "host":  "ip-10-1-80-213",
+  "executable":  "/weka/kyle/research/nanoGPT-moe-research/.venv/bin/python",
+  "cpu_count":  96,
+  "cpu_count_logical":  96,
+  "gpu":  "NVIDIA H100 80GB HBM3",
+  "gpu_count":  8,
+  "disk":  {
+    "/":  {
+      "total":  "103865303040",
+      "used":  "83890081792"
+    }
+  },
+  "memory":  {
+    "total":  "2147467816960"
+  },
+  "gpu_nvidia":  [
+    {
+      "name":  "NVIDIA H100 80GB HBM3",
+      "memoryTotal":  "85520809984",
+      "cudaCores":  16896,
+      "architecture":  "Hopper",
+      "uuid":  "GPU-0724f08d-6db8-de28-013d-0d4b10e751e5"
+    },
+    {
+      "name":  "NVIDIA H100 80GB HBM3",
+      "memoryTotal":  "85520809984",
+      "cudaCores":  16896,
+      "architecture":  "Hopper",
+      "uuid":  "GPU-030d7bb1-7a94-aa49-68f6-a6c3e6ba9657"
+    },
+    {
+      "name":  "NVIDIA H100 80GB HBM3",
+      "memoryTotal":  "85520809984",
+      "cudaCores":  16896,
+      "architecture":  "Hopper",
+      "uuid":  "GPU-5ebf1e30-45c7-3544-8efc-5baf1289cca8"
+    },
+    {
+      "name":  "NVIDIA H100 80GB HBM3",
+      "memoryTotal":  "85520809984",
+      "cudaCores":  16896,
+      "architecture":  "Hopper",
+      "uuid":  "GPU-ba5ea640-ae97-7a2f-cadd-9fd823bb8a5c"
+    },
+    {
+      "name":  "NVIDIA H100 80GB HBM3",
+      "memoryTotal":  "85520809984",
+      "cudaCores":  16896,
+      "architecture":  "Hopper",
+      "uuid":  "GPU-bfa75d45-eca3-f517-8e33-ef925e0f3050"
+    },
+    {
+      "name":  "NVIDIA H100 80GB HBM3",
+      "memoryTotal":  "85520809984",
+      "cudaCores":  16896,
+      "architecture":  "Hopper",
+      "uuid":  "GPU-cbc16805-d453-7024-23db-621b5fe463d4"
+    },
+    {
+      "name":  "NVIDIA H100 80GB HBM3",
+      "memoryTotal":  "85520809984",
+      "cudaCores":  16896,
+      "architecture":  "Hopper",
+      "uuid":  "GPU-1867e01c-310f-21d3-9c51-98d3b13ac936"
+    },
+    {
+      "name":  "NVIDIA H100 80GB HBM3",
+      "memoryTotal":  "85520809984",
+      "cudaCores":  16896,
+      "architecture":  "Hopper",
+      "uuid":  "GPU-636cecc5-59ab-dda1-4009-6877603f2ba4"
+    }
+  ],
+  "cudaVersion":  "12.2",
+  "slurm":  {
+    "cluster_name":  "(null)",
+    "conf":  "/var/spool/slurmd/conf-cache/slurm.conf",
+    "cpus_on_node":  "96",
+    "cpus_per_task":  "32",
+    "gpus_on_node":  "8",
+    "gtids":  "0",
+    "job_cpus_per_node":  "96",
+    "job_end_time":  "1766521140",
+    "job_gid":  "1072",
+    "job_gpus":  "0,1,2,3,4,5,6,7",
+    "job_id":  "3767497",
+    "job_name":  "gpt2-moe-124m",
+    "job_nodelist":  "ip-10-1-80-213",
+    "job_num_nodes":  "1",
+    "job_partition":  "dev",
+    "job_qos":  "normal",
+    "job_start_time":  "1766348340",
+    "job_uid":  "1072",
+    "job_user":  "kyle",
+    "jobid":  "3767497",
+    "localid":  "0",
+    "nnodes":  "1",
+    "nodeid":  "0",
+    "nodelist":  "ip-10-1-80-213",
+    "nprocs":  "1",
+    "ntasks":  "1",
+    "ntasks_per_node":  "1",
+    "prio_process":  "0",
+    "procid":  "0",
+    "submit_dir":  "/weka/kyle/research/nanoGPT-moe-research",
+    "submit_host":  "ip-10-1-104-49",
+    "task_pid":  "3144863",
+    "tasks_per_node":  "1",
+    "topology_addr":  "ip-10-1-80-213",
+    "topology_addr_pattern":  "node",
+    "tres_per_task":  "cpu:32"
+  },
+  "trainium":  {
+    "name":  "Trainium",
+    "vendor":  "AWS"
+  },
+  "writerId":  "z1utw7l4vjcue87nxydjni9jgymx0dcr"
+}

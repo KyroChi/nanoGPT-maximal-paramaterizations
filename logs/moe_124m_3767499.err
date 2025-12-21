@@ -1,0 +1,30 @@
+W1221 20:34:43.144000 3147919 torch/distributed/run.py:803] 
+W1221 20:34:43.144000 3147919 torch/distributed/run.py:803] *****************************************
+W1221 20:34:43.144000 3147919 torch/distributed/run.py:803] Setting OMP_NUM_THREADS environment variable for each process to be 1 in default, to avoid your system being overloaded, please further tune the variable for optimal performance in your application as needed. 
+W1221 20:34:43.144000 3147919 torch/distributed/run.py:803] *****************************************
+/weka/kyle/research/nanoGPT-moe-research/train.py:207: FutureWarning: `torch.cuda.amp.GradScaler(args...)` is deprecated. Please use `torch.amp.GradScaler('cuda', args...)` instead.
+  scaler = torch.cuda.amp.GradScaler(enabled=(dtype == 'float16'))
+/weka/kyle/research/nanoGPT-moe-research/train.py:207: FutureWarning: `torch.cuda.amp.GradScaler(args...)` is deprecated. Please use `torch.amp.GradScaler('cuda', args...)` instead.
+  scaler = torch.cuda.amp.GradScaler(enabled=(dtype == 'float16'))
+/weka/kyle/research/nanoGPT-moe-research/train.py:207: FutureWarning: `torch.cuda.amp.GradScaler(args...)` is deprecated. Please use `torch.amp.GradScaler('cuda', args...)` instead.
+  scaler = torch.cuda.amp.GradScaler(enabled=(dtype == 'float16'))
+/weka/kyle/research/nanoGPT-moe-research/train.py:207: FutureWarning: `torch.cuda.amp.GradScaler(args...)` is deprecated. Please use `torch.amp.GradScaler('cuda', args...)` instead.
+  scaler = torch.cuda.amp.GradScaler(enabled=(dtype == 'float16'))
+/weka/kyle/research/nanoGPT-moe-research/train.py:207: FutureWarning: `torch.cuda.amp.GradScaler(args...)` is deprecated. Please use `torch.amp.GradScaler('cuda', args...)` instead.
+  scaler = torch.cuda.amp.GradScaler(enabled=(dtype == 'float16'))
+/weka/kyle/research/nanoGPT-moe-research/train.py:207: FutureWarning: `torch.cuda.amp.GradScaler(args...)` is deprecated. Please use `torch.amp.GradScaler('cuda', args...)` instead.
+  scaler = torch.cuda.amp.GradScaler(enabled=(dtype == 'float16'))
+/weka/kyle/research/nanoGPT-moe-research/train.py:207: FutureWarning: `torch.cuda.amp.GradScaler(args...)` is deprecated. Please use `torch.amp.GradScaler('cuda', args...)` instead.
+  scaler = torch.cuda.amp.GradScaler(enabled=(dtype == 'float16'))
+/weka/kyle/research/nanoGPT-moe-research/train.py:207: FutureWarning: `torch.cuda.amp.GradScaler(args...)` is deprecated. Please use `torch.amp.GradScaler('cuda', args...)` instead.
+  scaler = torch.cuda.amp.GradScaler(enabled=(dtype == 'float16'))
+wandb: Currently logged in as: krc (luma-ai) to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+wandb: setting up run cpji5z9r
+wandb: Tracking run with wandb version 0.23.1
+wandb: Run data is saved locally in /weka/kyle/research/nanoGPT-moe-research/wandb/run-20251221_203457-cpji5z9r
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run gpt2-moe-124m-top2-6experts
+wandb: ⭐️ View project at https://wandb.ai/luma-ai/nanogpt-moe
+wandb: 🚀 View run at https://wandb.ai/luma-ai/nanogpt-moe/runs/cpji5z9r
+/weka/kyle/research/nanoGPT-moe-research/.venv/lib/python3.11/site-packages/torch/distributed/distributed_c10d.py:4876: UserWarning: barrier(): using the device under current context. You can specify `device_id` in `init_process_group` to mute this warning.
+  warnings.warn(  # warn only once

@@ -363,31 +363,35 @@ while True:
     t1 = time.time()
     dt = t1 - t0
     t0 = t1
+    # get loss as float. note: this is a CPU-GPU sync point
+    # scale up to undo the division above, approximating the true total loss (exact would have been a sum)
+    lossf = loss.item() * gradient_accumulation_steps
+    if local_iter_num >= 5: # let the training loop settle a bit
+        mfu = raw_model.estimate_mfu(batch_size * gradient_accumulation_steps, dt)
+        running_mfu = mfu if running_mfu == -1.0 else 0.9*running_mfu + 0.1*mfu
+    # throughput: tokens processed this iteration divided by elapsed time
+    # tokens_per_iter is computed earlier as gradient_accumulation_steps * ddp_world_size * batch_size * block_size
+    throughput = tokens_per_iter / dt if dt > 0 else float('inf')
+    
+    # Log to wandb every iteration (if enabled)
+    if wandb_log and master_process:
+        log_dict = {
+            "iter": iter_num,
+            "train/loss": lossf,
+            "lr": lr,
+            "perf/mfu": running_mfu*100, # convert to percentage
+            "perf/tokens_per_sec": throughput,
+            "perf/mtokens_per_sec": throughput / 1e6,
+            "perf/FLOPs_per_sec": throughput * raw_model.estimate_flops_per_token(tokens_per_iter) / dt,
+            "perf/iter_time": dt,
+            "perf/TFLOPs_per_hour": throughput * raw_model.estimate_flops_per_token(tokens_per_iter) / dt * 3600 / 1e12, 
+        }
+        if use_moe:
+            log_dict["train/aux_loss"] = aux_loss_accum
+        wandb.log(log_dict)
+    
+    # Print to console only every log_interval iterations
     if iter_num % log_interval == 0 and master_process:
-        # get loss as float. note: this is a CPU-GPU sync point
-        # scale up to undo the division above, approximating the true total loss (exact would have been a sum)
-        lossf = loss.item() * gradient_accumulation_steps
-        if local_iter_num >= 5: # let the training loop settle a bit
-            mfu = raw_model.estimate_mfu(batch_size * gradient_accumulation_steps, dt)
-            running_mfu = mfu if running_mfu == -1.0 else 0.9*running_mfu + 0.1*mfu
-        # throughput: tokens processed this iteration divided by elapsed time
-        # tokens_per_iter is computed earlier as gradient_accumulation_steps * ddp_world_size * batch_size * block_size
-        throughput = tokens_per_iter / dt if dt > 0 else float('inf')
-        if wandb_log:
-            log_dict = {
-                "iter": iter_num,
-                "train/loss": lossf,
-                "lr": lr,
-                "perf/mfu": running_mfu*100, # convert to percentage
-                "perf/tokens_per_sec": throughput,
-                "perf/mtokens_per_sec": throughput / 1e6,
-                "perf/FLOPs_per_sec": throughput * raw_model.estimate_flops_per_token(tokens_per_iter) / dt,
-                "perf/iter_time": dt,
-                "perf/TFLOPs_per_hour": throughput * raw_model.estimate_flops_per_token(tokens_per_iter) / dt * 3600 / 1e12, 
-            }
-            if use_moe:
-                log_dict["train/aux_loss"] = aux_loss_accum
-            wandb.log(log_dict)
         if use_moe:
             print(f"iter {iter_num}: loss {lossf:.4f}, aux_loss {aux_loss_accum:.4f}, time {dt*1000:.2f}ms, mfu {running_mfu*100:.2f}%, throughput {throughput/1e6:.3f} MT/s")
         else:

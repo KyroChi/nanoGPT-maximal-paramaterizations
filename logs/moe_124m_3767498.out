@@ -1,0 +1,619 @@
+Job ID: 3767498
+Node: ip-10-1-80-213
+GPUs: 0,1,2,3,4,5,6,7
+Start time: Sun Dec 21 20:27:48 UTC 2025
+Overriding config with config/train_gpt2_moe_124m.py:
+# Config for 124M active parameter MoE model
+# Architecture: GPT-2 style with MoE replacing MLP
+# - 6 experts per layer, top-2 routing
+# - Active params ~124M, total params ~238M
+
+import os
+
+# wandb logging
+wandb_log = True
+wandb_project = 'nanogpt-moe'
+wandb_run_name = 'gpt2-moe-124m-top2-6experts'
+
+# output directory
+out_dir = f'out/{wandb_run_name}'
+os.makedirs(out_dir, exist_ok=True)
+
+# model architecture (matches GPT-2 124M for attention/embeddings)
+n_layer = 12
+n_head = 12
+n_embd = 768
+block_size = 1024
+vocab_size = 50304  # padded for efficiency
+bias = False  # no bias for slightly better performance
+dropout = 0.0
+
+# MoE configuration
+use_moe = True
+moe_num_experts = 6
+moe_num_experts_per_tok = 2  # top-2 routing
+# Hidden size chosen so active params ≈ 124M
+# Each expert: 768 * 1536 * 2 = 2.36M params
+# Top-2 active: 4.72M per layer (matches GPT-2 MLP)
+moe_ffn_hidden_size = 1536
+
+# training configuration
+batch_size = 12  # micro batch size per GPU
+block_size = 1024
+gradient_accumulation_steps = 40  # effective batch = 12 * 40 * num_gpus
+
+# optimizer
+learning_rate = 6e-4
+max_iters = 600000
+weight_decay = 0.1
+beta1 = 0.9
+beta2 = 0.95
+grad_clip = 1.0
+
+# learning rate schedule
+warmup_iters = 2000
+lr_decay_iters = 600000
+min_lr = 6e-5
+
+# evaluation
+eval_interval = 1000
+eval_iters = 200
+log_interval = 10
+
+# checkpointing
+always_save_checkpoint = False
+
+# system
+compile = False  # disable for FSDP compatibility
+
+
+Overriding config with config/train_gpt2_moe_124m.py:
+# Config for 124M active parameter MoE model
+# Architecture: GPT-2 style with MoE replacing MLP
+# - 6 experts per layer, top-2 routing
+# - Active params ~124M, total params ~238M
+
+import os
+
+# wandb logging
+wandb_log = True
+wandb_project = 'nanogpt-moe'
+wandb_run_name = 'gpt2-moe-124m-top2-6experts'
+
+# output directory
+out_dir = f'out/{wandb_run_name}'
+os.makedirs(out_dir, exist_ok=True)
+
+# model architecture (matches GPT-2 124M for attention/embeddings)
+n_layer = 12
+n_head = 12
+n_embd = 768
+block_size = 1024
+vocab_size = 50304  # padded for efficiency
+bias = False  # no bias for slightly better performance
+dropout = 0.0
+
+# MoE configuration
+use_moe = True
+moe_num_experts = 6
+moe_num_experts_per_tok = 2  # top-2 routing
+# Hidden size chosen so active params ≈ 124M
+# Each expert: 768 * 1536 * 2 = 2.36M params
+# Top-2 active: 4.72M per layer (matches GPT-2 MLP)
+moe_ffn_hidden_size = 1536
+
+# training configuration
+batch_size = 12  # micro batch size per GPU
+block_size = 1024
+gradient_accumulation_steps = 40  # effective batch = 12 * 40 * num_gpus
+
+# optimizer
+learning_rate = 6e-4
+max_iters = 600000
+weight_decay = 0.1
+beta1 = 0.9
+beta2 = 0.95
+grad_clip = 1.0
+
+# learning rate schedule
+warmup_iters = 2000
+lr_decay_iters = 600000
+min_lr = 6e-5
+
+# evaluation
+eval_interval = 1000
+eval_iters = 200
+log_interval = 10
+
+# checkpointing
+always_save_checkpoint = False
+
+# system
+compile = False  # disable for FSDP compatibility
+
+
+Overriding config with config/train_gpt2_moe_124m.py:
+# Config for 124M active parameter MoE model
+# Architecture: GPT-2 style with MoE replacing MLP
+# - 6 experts per layer, top-2 routing
+# - Active params ~124M, total params ~238M
+
+import os
+
+# wandb logging
+wandb_log = True
+wandb_project = 'nanogpt-moe'
+wandb_run_name = 'gpt2-moe-124m-top2-6experts'
+
+# output directory
+out_dir = f'out/{wandb_run_name}'
+os.makedirs(out_dir, exist_ok=True)
+
+# model architecture (matches GPT-2 124M for attention/embeddings)
+n_layer = 12
+n_head = 12
+n_embd = 768
+block_size = 1024
+vocab_size = 50304  # padded for efficiency
+bias = False  # no bias for slightly better performance
+dropout = 0.0
+
+# MoE configuration
+use_moe = True
+moe_num_experts = 6
+moe_num_experts_per_tok = 2  # top-2 routing
+# Hidden size chosen so active params ≈ 124M
+# Each expert: 768 * 1536 * 2 = 2.36M params
+# Top-2 active: 4.72M per layer (matches GPT-2 MLP)
+moe_ffn_hidden_size = 1536
+
+# training configuration
+batch_size = 12  # micro batch size per GPU
+block_size = 1024
+gradient_accumulation_steps = 40  # effective batch = 12 * 40 * num_gpus
+
+# optimizer
+learning_rate = 6e-4
+max_iters = 600000
+weight_decay = 0.1
+beta1 = 0.9
+beta2 = 0.95
+grad_clip = 1.0
+
+# learning rate schedule
+warmup_iters = 2000
+lr_decay_iters = 600000
+min_lr = 6e-5
+
+# evaluation
+eval_interval = 1000
+eval_iters = 200
+log_interval = 10
+
+# checkpointing
+always_save_checkpoint = False
+
+# system
+compile = False  # disable for FSDP compatibility
+
+
+Overriding config with config/train_gpt2_moe_124m.py:
+# Config for 124M active parameter MoE model
+# Architecture: GPT-2 style with MoE replacing MLP
+# - 6 experts per layer, top-2 routing
+# - Active params ~124M, total params ~238M
+
+import os
+
+# wandb logging
+wandb_log = True
+wandb_project = 'nanogpt-moe'
+wandb_run_name = 'gpt2-moe-124m-top2-6experts'
+
+# output directory
+out_dir = f'out/{wandb_run_name}'
+os.makedirs(out_dir, exist_ok=True)
+
+# model architecture (matches GPT-2 124M for attention/embeddings)
+n_layer = 12
+n_head = 12
+n_embd = 768
+block_size = 1024
+vocab_size = 50304  # padded for efficiency
+bias = False  # no bias for slightly better performance
+dropout = 0.0
+
+# MoE configuration
+use_moe = True
+moe_num_experts = 6
+moe_num_experts_per_tok = 2  # top-2 routing
+# Hidden size chosen so active params ≈ 124M
+# Each expert: 768 * 1536 * 2 = 2.36M params
+# Top-2 active: 4.72M per layer (matches GPT-2 MLP)
+moe_ffn_hidden_size = 1536
+
+# training configuration
+batch_size = 12  # micro batch size per GPU
+block_size = 1024
+gradient_accumulation_steps = 40  # effective batch = 12 * 40 * num_gpus
+
+# optimizer
+learning_rate = 6e-4
+max_iters = 600000
+weight_decay = 0.1
+beta1 = 0.9
+beta2 = 0.95
+grad_clip = 1.0
+
+# learning rate schedule
+warmup_iters = 2000
+lr_decay_iters = 600000
+min_lr = 6e-5
+
+# evaluation
+eval_interval = 1000
+eval_iters = 200
+log_interval = 10
+
+# checkpointing
+always_save_checkpoint = False
+
+# system
+compile = False  # disable for FSDP compatibility
+
+
+Overriding config with config/train_gpt2_moe_124m.py:
+# Config for 124M active parameter MoE model
+# Architecture: GPT-2 style with MoE replacing MLP
+# - 6 experts per layer, top-2 routing
+# - Active params ~124M, total params ~238M
+
+import os
+
+# wandb logging
+wandb_log = True
+wandb_project = 'nanogpt-moe'
+wandb_run_name = 'gpt2-moe-124m-top2-6experts'
+
+# output directory
+out_dir = f'out/{wandb_run_name}'
+os.makedirs(out_dir, exist_ok=True)
+
+# model architecture (matches GPT-2 124M for attention/embeddings)
+n_layer = 12
+n_head = 12
+n_embd = 768
+block_size = 1024
+vocab_size = 50304  # padded for efficiency
+bias = False  # no bias for slightly better performance
+dropout = 0.0
+
+# MoE configuration
+use_moe = True
+moe_num_experts = 6
+moe_num_experts_per_tok = 2  # top-2 routing
+# Hidden size chosen so active params ≈ 124M
+# Each expert: 768 * 1536 * 2 = 2.36M params
+# Top-2 active: 4.72M per layer (matches GPT-2 MLP)
+moe_ffn_hidden_size = 1536
+
+# training configuration
+batch_size = 12  # micro batch size per GPU
+block_size = 1024
+gradient_accumulation_steps = 40  # effective batch = 12 * 40 * num_gpus
+
+# optimizer
+learning_rate = 6e-4
+max_iters = 600000
+weight_decay = 0.1
+beta1 = 0.9
+beta2 = 0.95
+grad_clip = 1.0
+
+# learning rate schedule
+warmup_iters = 2000
+lr_decay_iters = 600000
+min_lr = 6e-5
+
+# evaluation
+eval_interval = 1000
+eval_iters = 200
+log_interval = 10
+
+# checkpointing
+always_save_checkpoint = False
+
+# system
+compile = False  # disable for FSDP compatibility
+
+
+Overriding config with config/train_gpt2_moe_124m.py:
+# Config for 124M active parameter MoE model
+# Architecture: GPT-2 style with MoE replacing MLP
+# - 6 experts per layer, top-2 routing
+# - Active params ~124M, total params ~238M
+
+import os
+
+# wandb logging
+wandb_log = True
+wandb_project = 'nanogpt-moe'
+wandb_run_name = 'gpt2-moe-124m-top2-6experts'
+
+# output directory
+out_dir = f'out/{wandb_run_name}'
+os.makedirs(out_dir, exist_ok=True)
+
+# model architecture (matches GPT-2 124M for attention/embeddings)
+n_layer = 12
+n_head = 12
+n_embd = 768
+block_size = 1024
+vocab_size = 50304  # padded for efficiency
+bias = False  # no bias for slightly better performance
+dropout = 0.0
+
+# MoE configuration
+use_moe = True
+moe_num_experts = 6
+moe_num_experts_per_tok = 2  # top-2 routing
+# Hidden size chosen so active params ≈ 124M
+# Each expert: 768 * 1536 * 2 = 2.36M params
+# Top-2 active: 4.72M per layer (matches GPT-2 MLP)
+moe_ffn_hidden_size = 1536
+
+# training configuration
+batch_size = 12  # micro batch size per GPU
+block_size = 1024
+gradient_accumulation_steps = 40  # effective batch = 12 * 40 * num_gpus
+
+# optimizer
+learning_rate = 6e-4
+max_iters = 600000
+weight_decay = 0.1
+beta1 = 0.9
+beta2 = 0.95
+grad_clip = 1.0
+
+# learning rate schedule
+warmup_iters = 2000
+lr_decay_iters = 600000
+min_lr = 6e-5
+
+# evaluation
+eval_interval = 1000
+eval_iters = 200
+log_interval = 10
+
+# checkpointing
+always_save_checkpoint = False
+
+# system
+compile = False  # disable for FSDP compatibility
+
+
+Overriding config with config/train_gpt2_moe_124m.py:
+# Config for 124M active parameter MoE model
+# Architecture: GPT-2 style with MoE replacing MLP
+# - 6 experts per layer, top-2 routing
+# - Active params ~124M, total params ~238M
+
+import os
+
+# wandb logging
+wandb_log = True
+wandb_project = 'nanogpt-moe'
+wandb_run_name = 'gpt2-moe-124m-top2-6experts'
+
+# output directory
+out_dir = f'out/{wandb_run_name}'
+os.makedirs(out_dir, exist_ok=True)
+
+# model architecture (matches GPT-2 124M for attention/embeddings)
+n_layer = 12
+n_head = 12
+n_embd = 768
+block_size = 1024
+vocab_size = 50304  # padded for efficiency
+bias = False  # no bias for slightly better performance
+dropout = 0.0
+
+# MoE configuration
+use_moe = True
+moe_num_experts = 6
+moe_num_experts_per_tok = 2  # top-2 routing
+# Hidden size chosen so active params ≈ 124M
+# Each expert: 768 * 1536 * 2 = 2.36M params
+# Top-2 active: 4.72M per layer (matches GPT-2 MLP)
+moe_ffn_hidden_size = 1536
+
+# training configuration
+batch_size = 12  # micro batch size per GPU
+block_size = 1024
+gradient_accumulation_steps = 40  # effective batch = 12 * 40 * num_gpus
+
+# optimizer
+learning_rate = 6e-4
+max_iters = 600000
+weight_decay = 0.1
+beta1 = 0.9
+beta2 = 0.95
+grad_clip = 1.0
+
+# learning rate schedule
+warmup_iters = 2000
+lr_decay_iters = 600000
+min_lr = 6e-5
+
+# evaluation
+eval_interval = 1000
+eval_iters = 200
+log_interval = 10
+
+# checkpointing
+always_save_checkpoint = False
+
+# system
+compile = False  # disable for FSDP compatibility
+
+
+Overriding config with config/train_gpt2_moe_124m.py:
+# Config for 124M active parameter MoE model
+# Architecture: GPT-2 style with MoE replacing MLP
+# - 6 experts per layer, top-2 routing
+# - Active params ~124M, total params ~238M
+
+import os
+
+# wandb logging
+wandb_log = True
+wandb_project = 'nanogpt-moe'
+wandb_run_name = 'gpt2-moe-124m-top2-6experts'
+
+# output directory
+out_dir = f'out/{wandb_run_name}'
+os.makedirs(out_dir, exist_ok=True)
+
+# model architecture (matches GPT-2 124M for attention/embeddings)
+n_layer = 12
+n_head = 12
+n_embd = 768
+block_size = 1024
+vocab_size = 50304  # padded for efficiency
+bias = False  # no bias for slightly better performance
+dropout = 0.0
+
+# MoE configuration
+use_moe = True
+moe_num_experts = 6
+moe_num_experts_per_tok = 2  # top-2 routing
+# Hidden size chosen so active params ≈ 124M
+# Each expert: 768 * 1536 * 2 = 2.36M params
+# Top-2 active: 4.72M per layer (matches GPT-2 MLP)
+moe_ffn_hidden_size = 1536
+
+# training configuration
+batch_size = 12  # micro batch size per GPU
+block_size = 1024
+gradient_accumulation_steps = 40  # effective batch = 12 * 40 * num_gpus
+
+# optimizer
+learning_rate = 6e-4
+max_iters = 600000
+weight_decay = 0.1
+beta1 = 0.9
+beta2 = 0.95
+grad_clip = 1.0
+
+# learning rate schedule
+warmup_iters = 2000
+lr_decay_iters = 600000
+min_lr = 6e-5
+
+# evaluation
+eval_interval = 1000
+eval_iters = 200
+log_interval = 10
+
+# checkpointing
+always_save_checkpoint = False
+
+# system
+compile = False  # disable for FSDP compatibility
+
+
+tokens per iteration will be: 491,520
+Initializing a new model from scratch
+defaulting to vocab_size of GPT-2 to 50304 (50257 rounded up for efficiency)
+tokens per iteration will be: 491,520
+Initializing a new model from scratch
+defaulting to vocab_size of GPT-2 to 50304 (50257 rounded up for efficiency)
+tokens per iteration will be: 491,520
+tokens per iteration will be: 491,520
+Initializing a new model from scratch
+defaulting to vocab_size of GPT-2 to 50304 (50257 rounded up for efficiency)
+Initializing a new model from scratch
+defaulting to vocab_size of GPT-2 to 50304 (50257 rounded up for efficiency)
+tokens per iteration will be: 491,520
+Initializing a new model from scratch
+defaulting to vocab_size of GPT-2 to 50304 (50257 rounded up for efficiency)
+tokens per iteration will be: 491,520
+Initializing a new model from scratch
+defaulting to vocab_size of GPT-2 to 50304 (50257 rounded up for efficiency)
+tokens per iteration will be: 491,520
+tokens per iteration will be: 491,520
+Initializing a new model from scratchInitializing a new model from scratch
+
+defaulting to vocab_size of GPT-2 to 50304 (50257 rounded up for efficiency)defaulting to vocab_size of GPT-2 to 50304 (50257 rounded up for efficiency)
+
+number of parameters: 236.89M
+number of parameters: 236.89M
+number of parameters: 236.89M
+number of parameters: 236.89M
+number of parameters: 236.89M
+number of parameters: 236.89M
+number of parameters: 236.89M
+number of parameters: 236.89M
+num decayed parameter tensors: 62, with 237,656,064 parameters
+num non-decayed parameter tensors: 37, with 19,272 parameters
+num decayed parameter tensors: 62, with 237,656,064 parameters
+num non-decayed parameter tensors: 37, with 19,272 parameters
+using fused AdamW: True
+using fused AdamW: True
+num decayed parameter tensors: 62, with 237,656,064 parameters
+num non-decayed parameter tensors: 37, with 19,272 parameters
+using fused AdamW: True
+num decayed parameter tensors: 62, with 237,656,064 parameters
+num non-decayed parameter tensors: 37, with 19,272 parameters
+using fused AdamW: Truenum decayed parameter tensors: 62, with 237,656,064 parameters
+
+num non-decayed parameter tensors: 37, with 19,272 parameters
+using fused AdamW: True
+num decayed parameter tensors: 62, with 237,656,064 parameters
+num non-decayed parameter tensors: 37, with 19,272 parameters
+num decayed parameter tensors: 62, with 237,656,064 parameters
+num non-decayed parameter tensors: 37, with 19,272 parameters
+using fused AdamW: True
+using fused AdamW: True
+num decayed parameter tensors: 62, with 237,656,064 parameters
+num non-decayed parameter tensors: 37, with 19,272 parameters
+using fused AdamW: True
+step 0: train loss 10.9881, val loss 10.9882
+step 0: train loss 10.9880, val loss 10.9884step 0: train loss 10.9883, val loss 10.9878
+step 0: train loss 10.9887, val loss 10.9885
+
+step 0: train loss 10.9882, val loss 10.9882step 0: train loss 10.9882, val loss 10.9882
+
+step 0: train loss 10.9882, val loss 10.9886
+step 0: train loss 10.9878, val loss 10.9876
+iter 0: loss 11.0018, aux_loss 0.0508, time 32004.77ms, mfu -100.00%, throughput 0.015 MT/s
+iter 10: loss 10.8592, aux_loss 0.0508, time 1051.44ms, mfu 28.86%, throughput 0.467 MT/s
+iter 20: loss 10.3999, aux_loss 0.0516, time 1099.37ms, mfu 28.26%, throughput 0.447 MT/s
+iter 30: loss 9.8215, aux_loss 0.0548, time 1192.32ms, mfu 26.80%, throughput 0.412 MT/s
+iter 40: loss 9.5370, aux_loss 0.0576, time 1244.28ms, mfu 25.38%, throughput 0.395 MT/s
+iter 50: loss 9.3905, aux_loss 0.0579, time 1262.14ms, mfu 24.38%, throughput 0.389 MT/s
+iter 60: loss 8.9314, aux_loss 0.0596, time 1270.74ms, mfu 23.99%, throughput 0.387 MT/s
+iter 70: loss 8.8686, aux_loss 0.0607, time 1269.80ms, mfu 23.83%, throughput 0.387 MT/s
+iter 80: loss 8.5481, aux_loss 0.0621, time 1266.49ms, mfu 23.82%, throughput 0.388 MT/s
+iter 90: loss 8.2831, aux_loss 0.0617, time 1267.86ms, mfu 23.77%, throughput 0.388 MT/s
+iter 100: loss 8.1326, aux_loss 0.0597, time 1248.97ms, mfu 23.94%, throughput 0.394 MT/s
+iter 110: loss 7.7466, aux_loss 0.0578, time 1244.55ms, mfu 24.14%, throughput 0.395 MT/s
+iter 120: loss 7.6481, aux_loss 0.0557, time 1229.61ms, mfu 24.33%, throughput 0.400 MT/s
+iter 130: loss 7.3678, aux_loss 0.0552, time 1215.66ms, mfu 24.61%, throughput 0.404 MT/s
+iter 140: loss 7.2389, aux_loss 0.0549, time 1189.64ms, mfu 24.97%, throughput 0.413 MT/s
+iter 150: loss 7.1488, aux_loss 0.0544, time 1180.91ms, mfu 25.28%, throughput 0.416 MT/s
+iter 160: loss 7.0195, aux_loss 0.0540, time 1159.82ms, mfu 25.67%, throughput 0.424 MT/s
+iter 170: loss 6.9887, aux_loss 0.0533, time 1143.87ms, mfu 26.04%, throughput 0.430 MT/s
+iter 180: loss 6.8242, aux_loss 0.0529, time 1123.61ms, mfu 26.44%, throughput 0.437 MT/s
+iter 190: loss 6.8978, aux_loss 0.0526, time 1112.81ms, mfu 26.78%, throughput 0.442 MT/s
+iter 200: loss 6.6525, aux_loss 0.0525, time 1105.49ms, mfu 27.14%, throughput 0.445 MT/s
+iter 210: loss 6.9736, aux_loss 0.0524, time 1093.88ms, mfu 27.37%, throughput 0.449 MT/s
+iter 220: loss 6.5805, aux_loss 0.0524, time 1081.06ms, mfu 27.61%, throughput 0.455 MT/s
+iter 230: loss 6.6043, aux_loss 0.0522, time 1087.39ms, mfu 27.79%, throughput 0.452 MT/s
+iter 240: loss 6.2301, aux_loss 0.0523, time 1082.40ms, mfu 27.85%, throughput 0.454 MT/s
+iter 250: loss 6.3907, aux_loss 0.0522, time 1083.07ms, mfu 27.92%, throughput 0.454 MT/s
+iter 260: loss 6.2156, aux_loss 0.0521, time 1080.51ms, mfu 27.93%, throughput 0.455 MT/s
+iter 270: loss 6.4378, aux_loss 0.0523, time 1082.49ms, mfu 27.90%, throughput 0.454 MT/s
+iter 280: loss 6.1900, aux_loss 0.0525, time 1084.00ms, mfu 27.92%, throughput 0.453 MT/s
+iter 290: loss 5.9905, aux_loss 0.0522, time 1079.50ms, mfu 27.97%, throughput 0.455 MT/s
+iter 300: loss 6.0543, aux_loss 0.0522, time 1076.54ms, mfu 27.99%, throughput 0.457 MT/s
