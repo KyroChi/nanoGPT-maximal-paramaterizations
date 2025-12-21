@@ -171,81 +171,99 @@ class MoE(nn.Module):
         self.dropout = nn.Dropout(config.dropout)
 
     def _forward_sparse(self, x, topk_idx, topk_vals):
-        """
-        Efficient vectorized MoE forward using einsum and advanced indexing.
-        Computes expert outputs in parallel and accumulates results.
-        """
+        """Memory-efficient, group-by-expert + batched matmul approach."""
         B, T, C = x.shape
         k = topk_idx.size(2)
-        E = self.num_experts
-        H = self.fc1_weight.size(2)
         device = x.device
         dtype = x.dtype
+
+        flat_idx = topk_idx.reshape(-1)  # (N,) where N = B*T*k
+        N = flat_idx.numel()
+        x_exp = x.unsqueeze(2).expand(-1, -1, k, -1).reshape(N, C)  # (N, C)
+
+        unique_experts, inverse = torch.unique(flat_idx, return_inverse=True)
+        U = unique_experts.numel()
+        if U == 0:
+            return torch.zeros(B, T, k, C, device=device, dtype=dtype)
+
+        perm = torch.argsort(inverse)
+        inverse_sorted = inverse[perm]
+        x_sorted = x_exp[perm]  # (N, C)
+
+        counts = torch.bincount(inverse_sorted, minlength=U)
+        max_count = int(counts.max().item())
+        starts = torch.cat((torch.tensor([0], device=device, dtype=counts.dtype), counts.cumsum(0)[:-1]))
         
-        # Flatten spatial dimensions: (B, T) -> (N,) where N = B*T
-        N = B * T
-        x_flat = x.view(N, C)  # (N, C)
-        topk_idx_flat = topk_idx.view(N, k)  # (N, k)
-        topk_vals_flat = topk_vals.view(N, k)  # (N, k)
-        
-        # Expand x for all top-k selections: (N, C) -> (N, k, C)
-        x_expanded = x_flat.unsqueeze(1).expand(-1, k, -1)  # (N, k, C)
-        
-        # Gather expert indices for each token-expert pair: (N, k)
-        # topk_idx_flat already contains the expert indices
-        
-        # For each expert, we need to compute outputs for tokens that selected it
-        # Strategy: use einsum to compute all (token, expert) pairs efficiently
-        
-        # Create expert selection mask: (N, k, E)
-        expert_mask = F.one_hot(topk_idx_flat, num_classes=E).float()  # (N, k, E)
-        
-        # Compute all expert outputs in parallel using einsum
-        # For each (token, expert) pair, compute: x @ W1[expert] @ W2[expert]
-        # We'll do this by expanding and using einsum
-        
-        # Expand weights: (E, C, H) -> (N, k, E, C, H) via broadcasting
-        # Actually, simpler: for each expert, compute all tokens, then mask
-        
-        # Initialize output
-        y_flat = torch.zeros(N, C, device=device, dtype=dtype)
-        
-        # For each expert, compute in batch
-        for e in range(E):
-            # Find all (token, position) pairs that use this expert
-            mask = (topk_idx_flat == e)  # (N, k)
-            if not mask.any():
+        # Convert to Python lists once to avoid repeated GPU-CPU syncs in loops
+        counts_list = counts.cpu().tolist()
+        starts_list = starts.cpu().tolist()
+
+        x_grouped = torch.zeros(U, max_count, C, device=device, dtype=dtype)
+        for i in range(U):
+            cnt = counts_list[i]
+            if cnt == 0:
                 continue
-            
-            # Get token indices and positions for this expert
-            token_pos_pairs = mask.nonzero(as_tuple=False)  # (M, 2) where col 0 = token_idx, col 1 = pos_idx
-            if token_pos_pairs.numel() == 0:
+            s = starts_list[i]
+            x_grouped[i, :cnt] = x_sorted[s:s+cnt]
+
+        weight1_u = self.fc1_weight[unique_experts]  # (U, C, H)
+        if self.fc1_bias is not None:
+            bias1_u = self.fc1_bias[unique_experts]  # (U, H)
+
+        h_grouped = torch.bmm(x_grouped, weight1_u)
+        if self.fc1_bias is not None:
+            h_grouped = h_grouped + bias1_u.unsqueeze(1)
+
+        H = h_grouped.size(-1)
+        h_sorted_flat = torch.empty(N, H, device=device, dtype=dtype)
+        for i in range(U):
+            cnt = counts_list[i]
+            if cnt == 0:
                 continue
-            
-            token_indices = token_pos_pairs[:, 0]  # (M,)
-            pos_indices = token_pos_pairs[:, 1]    # (M,)
-            
-            # Get inputs for tokens using this expert (may have duplicates if token uses expert twice)
-            x_expert = x_flat[token_indices]  # (M, C)
-            
-            # Compute expert output: (M, C) -> (M, C)
-            h = torch.matmul(x_expert, self.fc1_weight[e])  # (M, H)
-            if self.fc1_bias is not None:
-                h = h + self.fc1_bias[e]
-            h = self.act(h)
-            h = self.dropout(h)
-            out_expert = torch.matmul(h, self.fc2_weight[e])  # (M, C)
-            if self.fc2_bias is not None:
-                out_expert = out_expert + self.fc2_bias[e]
-            
-            # Get corresponding weights
-            weights = topk_vals_flat[token_indices, pos_indices]  # (M,)
-            
-            # Accumulate weighted outputs using scatter_add (handles duplicates correctly)
-            y_flat.scatter_add_(0, token_indices.unsqueeze(1).expand(-1, C), 
-                               out_expert * weights.unsqueeze(1))
-        
-        return y_flat.view(B, T, C)
+            s = starts_list[i]
+            h_sorted_flat[s:s+cnt] = h_grouped[i, :cnt]
+
+        inv_perm = torch.empty_like(perm)
+        inv_perm[perm] = torch.arange(N, device=device)
+        h_flat = h_sorted_flat[inv_perm]
+        h = h_flat.view(B, T, k, H)
+
+        h = self.act(h)
+        h = self.dropout(h)
+        h_exp = h.reshape(N, H)
+        h_sorted = h_exp[perm]
+
+        weight2_u = self.fc2_weight[unique_experts]  # (U, H, C)
+        if self.fc2_bias is not None:
+            bias2_u = self.fc2_bias[unique_experts]  # (U, C)
+
+        h_grouped2 = torch.zeros(U, max_count, H, device=device, dtype=dtype)
+        for i in range(U):
+            cnt = counts_list[i]
+            if cnt == 0:
+                continue
+            s = starts_list[i]
+            h_grouped2[i, :cnt] = h_sorted[s:s+cnt]
+
+        out_grouped = torch.bmm(h_grouped2, weight2_u)
+        if self.fc2_bias is not None:
+            out_grouped = out_grouped + bias2_u.unsqueeze(1)
+
+        out_sorted_flat = torch.empty(N, C, device=device, dtype=dtype)
+        for i in range(U):
+            cnt = counts_list[i]
+            if cnt == 0:
+                continue
+            s = starts_list[i]
+            out_sorted_flat[s:s+cnt] = out_grouped[i, :cnt]
+
+        out_flat = out_sorted_flat[inv_perm]
+        out_view = out_flat.view(B, T, k, C)
+
+        # Use topk_vals directly instead of gathering from sparse_gates
+        y = (out_view * topk_vals.unsqueeze(-1)).sum(dim=2)  # (B, T, C)
+
+        return y
 
     def forward(self, x):
         """
