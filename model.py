@@ -27,13 +27,9 @@ def log_mean(x, dim):
 
 
 def entropy_reg(logits: torch.Tensor, mean_over_batch: bool = True):
-    """Entropy regularization for the router."""
     entropy_l = lambda l: -(l * l.exp()).sum(-1)
-    # softmax over experts
-    # logits: [batch_size * sequence_length, num_experts]
     logprobs = F.log_softmax(logits, dim=-1)
     if mean_over_batch:
-        # take mean probability over batch
         logprobs = log_mean(logprobs, 0)
 
     return -entropy_l(logprobs).mean()
@@ -42,41 +38,18 @@ def entropy_reg(logits: torch.Tensor, mean_over_batch: bool = True):
 # two losses below are adapted from
 # https://github.com/google/flaxformer/blob/b725bd2a51d70e866d819c92de166fbf24425e6a/flaxformer/architectures/moe/routing.py
 def load_balancing_loss(logits: torch.Tensor, expert_indices: torch.Tensor) -> float:
-    """Computes auxiliary load balancing loss as in Switch Transformer.
+    _, num_experts = logits.shape
 
-    See Switch Transformer (https://arxiv.org/abs/2101.03961). This function
-    implements the loss function presented in equations (4) - (6). It aims to
-    penalize those cases where the routing between experts is unbalanced.
-
-    Args:
-      logits: logits assigned to each expert per token. Shape:
-        <float32>[batch_size * sequence_length, num_experts].
-      expert_indices: <int>[batch_size * sequence_length, num_selected_experts]
-        indices identifying the top num_selected_experts for a given token.
-
-    Returns:
-      The auxiliary loss.
-    """
-    # num_token = batch_size * sequence_length
-    num_token, num_experts = logits.shape
-
-    # Shape: [batch_size * sequence_length, num_selected_experts, num_experts].
     expert_mask = F.one_hot(expert_indices, num_experts)
-    # For a given token, determine if it was routed to a given expert.
-    # Shape: [batch_size * sequence_length, num_experts]
     expert_mask, _ = torch.max(expert_mask, dim=-2)
 
-    # shape [num_experts]
     tokens_per_expert = torch.mean(expert_mask.float(), dim=0, dtype=torch.float32)
 
-    # compute router probability per expert in log space for numerical stability
     logprobs = F.log_softmax(logits, dim=-1)
-    # take mean probability over batch
-    # shape [num_experts]
     logprobs = log_mean(logprobs, dim=0)
     router_prob_per_expert = torch.exp(logprobs)
     return (
-        torch.mean(  # mean over experts
+        torch.mean( 
             tokens_per_expert * router_prob_per_expert,
             dtype=torch.float32,
         )
@@ -105,8 +78,6 @@ def router_z_loss(router_logits: torch.Tensor) -> float:
 
 
 class LayerNorm(nn.Module):
-    """ LayerNorm but with an optional bias. PyTorch doesn't support simply bias=False """
-
     def __init__(self, ndim, bias):
         super().__init__()
         self.weight = nn.Parameter(torch.ones(ndim))
@@ -120,11 +91,8 @@ class CausalSelfAttention(nn.Module):
     def __init__(self, config):
         super().__init__()
         assert config.n_embd % config.n_head == 0
-        # key, query, value projections for all heads, but in a batch
         self.c_attn = nn.Linear(config.n_embd, 3 * config.n_embd, bias=config.bias)
-        # output projection
         self.c_proj = nn.Linear(config.n_embd, config.n_embd, bias=config.bias)
-        # regularization
         self.attn_dropout = nn.Dropout(config.dropout)
         self.resid_dropout = nn.Dropout(config.dropout)
         self.n_head = config.n_head
@@ -182,29 +150,18 @@ class MLP(nn.Module):
 
 
 class MoE(nn.Module):
-    """
-    Optimized MoE implementation with batched matrix multiplications.
-    
-    Uses a group-by-expert approach with torch.bmm for efficient computation.
-    Expert weights are stored as single tensors (E, in_dim, hidden) rather than
-    separate nn.Module instances, enabling batched operations.
-    """
-
     def __init__(self, config):
         super().__init__()
         self.num_experts = config.moe_num_experts
         self.topk = max(1, min(config.moe_num_experts_per_tok, self.num_experts))
         in_dim = config.n_embd
-        # Default to 4 * n_embd if moe_ffn_hidden_size is 0 or not set
         hidden = config.moe_ffn_hidden_size if config.moe_ffn_hidden_size > 0 else 4 * config.n_embd
         E = self.num_experts
         self.config = config
 
-        # Router
         self.w_gating = nn.Linear(in_dim, E, bias=False)
         self.router_bias = nn.Parameter(torch.zeros(E))
 
-        # Expert weights stored as batched tensors for efficient bmm
         self.fc1_weight = nn.Parameter(torch.randn(E, in_dim, hidden) * 0.02)
         self.fc1_bias = nn.Parameter(torch.zeros(E, hidden)) if config.bias else None
         self.fc2_weight = nn.Parameter(torch.randn(E, hidden, in_dim) * 0.02)
@@ -220,28 +177,23 @@ class MoE(nn.Module):
         device = x.device
         dtype = x.dtype
 
-        # Flatten token-expert selections and corresponding inputs
         flat_idx = topk_idx.reshape(-1)  # (N,) where N = B*T*k
         N = flat_idx.numel()
         x_exp = x.unsqueeze(2).expand(-1, -1, k, -1).reshape(N, C)  # (N, C)
 
-        # Find unique experts and inverse mapping
         unique_experts, inverse = torch.unique(flat_idx, return_inverse=True)
         U = unique_experts.numel()
         if U == 0:
             return torch.zeros(B, T, k, C, device=device, dtype=dtype)
 
-        # Sort positions by expert to make contiguous groups
         perm = torch.argsort(inverse)
         inverse_sorted = inverse[perm]
         x_sorted = x_exp[perm]  # (N, C)
 
-        # Counts per expert and grouping boundaries
         counts = torch.bincount(inverse_sorted, minlength=U)
         max_count = int(counts.max().item())
         starts = torch.cat((torch.tensor([0], device=device, dtype=counts.dtype), counts.cumsum(0)[:-1]))
 
-        # Pack inputs into (U, max_count, C) with zero-padding
         x_grouped = torch.zeros(U, max_count, C, device=device, dtype=dtype)
         for i in range(U):
             cnt = int(counts[i].item())
@@ -250,17 +202,14 @@ class MoE(nn.Module):
             s = int(starts[i].item())
             x_grouped[i, :cnt] = x_sorted[s:s+cnt]
 
-        # Gather per-expert parameters
         weight1_u = self.fc1_weight[unique_experts]  # (U, C, H)
         if self.fc1_bias is not None:
             bias1_u = self.fc1_bias[unique_experts]  # (U, H)
 
-        # Batched matmul: (U, max_count, C) x (U, C, H) -> (U, max_count, H)
         h_grouped = torch.bmm(x_grouped, weight1_u)
         if self.fc1_bias is not None:
             h_grouped = h_grouped + bias1_u.unsqueeze(1)
 
-        # Unpack grouped outputs back to sorted-flat layout
         H = h_grouped.size(-1)
         h_sorted_flat = torch.empty(N, H, device=device, dtype=dtype)
         for i in range(U):
@@ -270,17 +219,13 @@ class MoE(nn.Module):
             s = int(starts[i].item())
             h_sorted_flat[s:s+cnt] = h_grouped[i, :cnt]
 
-        # Unpermute to original flat order and reshape
         inv_perm = torch.empty_like(perm)
         inv_perm[perm] = torch.arange(N, device=device)
         h_flat = h_sorted_flat[inv_perm]
         h = h_flat.view(B, T, k, H)
 
-        # Activation + dropout
         h = self.act(h)
         h = self.dropout(h)
-
-        # Second projection: same grouped-batched strategy
         h_exp = h.reshape(N, H)
         h_sorted = h_exp[perm]
 
@@ -288,7 +233,6 @@ class MoE(nn.Module):
         if self.fc2_bias is not None:
             bias2_u = self.fc2_bias[unique_experts]  # (U, C)
 
-        # Pack h_sorted into (U, max_count, H)
         h_grouped2 = torch.zeros(U, max_count, H, device=device, dtype=dtype)
         for i in range(U):
             cnt = int(counts[i].item())
@@ -297,12 +241,10 @@ class MoE(nn.Module):
             s = int(starts[i].item())
             h_grouped2[i, :cnt] = h_sorted[s:s+cnt]
 
-        # Batched matmul: (U, max_count, H) x (U, H, C) -> (U, max_count, C)
         out_grouped = torch.bmm(h_grouped2, weight2_u)
         if self.fc2_bias is not None:
             out_grouped = out_grouped + bias2_u.unsqueeze(1)
 
-        # Unpack back to flat sorted -> unpermute -> reshape
         out_sorted_flat = torch.empty(N, C, device=device, dtype=dtype)
         for i in range(U):
             cnt = int(counts[i].item())
@@ -314,7 +256,6 @@ class MoE(nn.Module):
         out_flat = out_sorted_flat[inv_perm]
         out_view = out_flat.view(B, T, k, C)
 
-        # Multiply per-position outputs by gate values and sum
         gate_vals = gates.gather(2, topk_idx)  # (B, T, k)
         y = (out_view * gate_vals.unsqueeze(-1)).sum(dim=2)  # (B, T, C)
 
@@ -335,26 +276,19 @@ class MoE(nn.Module):
         device = x.device
         E = self.num_experts
 
-        # Compute router logits and gates
         logits = self.w_gating(x) + self.router_bias.view(1, 1, E)
         gates = F.softmax(logits, dim=-1)  # (B, T, E)
 
-        # Compute aux loss for load balancing
         importance = gates.sum(dim=(0, 1))  # (E,)
         importance_mean = importance / (B * T)
         aux_loss = (E * (importance_mean ** 2).sum()).to(device)
 
-        # Top-k selection
         topk_vals, topk_idx = gates.topk(self.topk, dim=-1)  # (B, T, topk)
-        
-        # Renormalize top-k values
         topk_vals = topk_vals / topk_vals.sum(dim=-1, keepdim=True).clamp_min(1e-6)
         
-        # Build sparse gates tensor
         sparse_gates = torch.zeros_like(gates)
         sparse_gates.scatter_(2, topk_idx, topk_vals)
 
-        # Forward through experts
         y = self._forward_sparse(x, topk_idx, sparse_gates)
 
         return y, {

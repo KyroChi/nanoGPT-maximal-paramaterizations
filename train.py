@@ -55,6 +55,12 @@ n_head = 12
 n_embd = 768
 dropout = 0.0 # for pretraining 0 is good, for finetuning try 0.1+
 bias = False # do we use bias inside LayerNorm and Linear layers?
+# MoE settings
+use_moe = False
+moe_num_experts = 8
+moe_num_experts_per_tok = 2
+moe_ffn_hidden_size = 0  # 0 means use 4 * n_embd
+moe_aux_loss_weight = 0.01  # weight for load balancing loss
 # adamw optimizer
 learning_rate = 6e-4 # max learning rate
 max_iters = 600000 # total number of training iterations
@@ -147,7 +153,10 @@ if os.path.exists(meta_path):
 
 # model init
 model_args = dict(n_layer=n_layer, n_head=n_head, n_embd=n_embd, block_size=block_size,
-                  bias=bias, vocab_size=None, dropout=dropout) # start with model_args from command line
+                  bias=bias, vocab_size=None, dropout=dropout,
+                  use_moe=use_moe, moe_num_experts=moe_num_experts, 
+                  moe_num_experts_per_tok=moe_num_experts_per_tok,
+                  moe_ffn_hidden_size=moe_ffn_hidden_size) # start with model_args from command line
 if init_from == 'scratch':
     # init a new model from scratch
     print("Initializing a new model from scratch")
@@ -320,6 +329,7 @@ while True:
 
     # forward backward update, with optional gradient accumulation to simulate larger batch size
     # and using the GradScaler if data type is float16
+    aux_loss_accum = 0.0
     for micro_step in range(gradient_accumulation_steps):
         if ddp:
             # in DDP training we only need to sync gradients at the last micro step.
@@ -329,6 +339,11 @@ while True:
             model.require_backward_grad_sync = (micro_step == gradient_accumulation_steps - 1)
         with ctx:
             logits, loss = model(X, Y)
+            # Add MoE auxiliary loss for load balancing
+            if use_moe:
+                aux_loss = raw_model.get_moe_aux_loss(aux_loss_weight=moe_aux_loss_weight)
+                loss = loss + aux_loss
+                aux_loss_accum += aux_loss.item() if hasattr(aux_loss, 'item') else aux_loss
             loss = loss / gradient_accumulation_steps # scale the loss to account for gradient accumulation
         # immediately async prefetch next batch while model is doing the forward pass on the GPU
         X, Y = get_batch('train')
@@ -359,7 +374,7 @@ while True:
         # tokens_per_iter is computed earlier as gradient_accumulation_steps * ddp_world_size * batch_size * block_size
         throughput = tokens_per_iter / dt if dt > 0 else float('inf')
         if wandb_log:
-            wandb.log({
+            log_dict = {
                 "iter": iter_num,
                 "train/loss": lossf,
                 "lr": lr,
@@ -369,8 +384,14 @@ while True:
                 "perf/FLOPs_per_sec": throughput * raw_model.estimate_flops_per_token(tokens_per_iter) / dt,
                 "perf/iter_time": dt,
                 "perf/TFLOPs_per_hour": throughput * raw_model.estimate_flops_per_token(tokens_per_iter) / dt * 3600 / 1e12, 
-            })
-        print(f"iter {iter_num}: loss {lossf:.4f}, time {dt*1000:.2f}ms, mfu {running_mfu*100:.2f}%, throughput {throughput/1e6:.3f} MT/s")
+            }
+            if use_moe:
+                log_dict["train/aux_loss"] = aux_loss_accum
+            wandb.log(log_dict)
+        if use_moe:
+            print(f"iter {iter_num}: loss {lossf:.4f}, aux_loss {aux_loss_accum:.4f}, time {dt*1000:.2f}ms, mfu {running_mfu*100:.2f}%, throughput {throughput/1e6:.3f} MT/s")
+        else:
+            print(f"iter {iter_num}: loss {lossf:.4f}, time {dt*1000:.2f}ms, mfu {running_mfu*100:.2f}%, throughput {throughput/1e6:.3f} MT/s")
     iter_num += 1
     local_iter_num += 1
 
