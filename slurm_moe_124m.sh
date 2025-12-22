@@ -12,10 +12,20 @@
 # Create logs directory if it doesn't exist
 mkdir -p logs
 
+# Get config file path from command line argument, or use default
+CONFIG_FILE="${1:-config/train_gpt2_moe_124m.py}"
+
+# Validate config file exists
+if [ ! -f "$CONFIG_FILE" ]; then
+    echo "Error: Config file '$CONFIG_FILE' not found!"
+    exit 1
+fi
+
 # Print job info
 echo "Job ID: $SLURM_JOB_ID"
 echo "Node: $SLURM_NODELIST"
 echo "GPUs: $CUDA_VISIBLE_DEVICES"
+echo "Config file: $CONFIG_FILE"
 echo "Start time: $(date)"
 
 # Set environment variables for distributed training
@@ -27,7 +37,7 @@ export WORLD_SIZE=$((SLURM_NNODES * 8))
 torchrun \
     --standalone \
     --nproc_per_node=8 \
-    train.py config/train_gpt2_moe_124m.py
+    train.py "$CONFIG_FILE"
 
 echo "End time: $(date)"
 

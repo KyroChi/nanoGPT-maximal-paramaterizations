@@ -81,7 +81,7 @@ device = 'cuda' # examples: 'cpu', 'cuda', 'cuda:0', 'cuda:1' etc., or try 'mps'
 dtype = 'bfloat16' if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else 'float16' # 'float32', 'bfloat16', or 'float16', the latter will auto implement a GradScaler
 compile = False # use PyTorch 2.0 to compile the model to be faster
 # -----------------------------------------------------------------------------
-config_keys = [k for k,v in globals().items() if not k.startswith('_') and isinstance(v, (int, float, bool, str))]
+config_keys = [k for k,v in globals().items() if not k.startswith('_') and isinstance(v, (int, float, bool, str, list, tuple))]
 exec(open('configurator.py').read()) # overrides from command line or config file
 config = {k: globals()[k] for k in config_keys} # will be useful for logging
 # -----------------------------------------------------------------------------
@@ -274,6 +274,27 @@ def get_lr(it):
 if wandb_log and master_process:
     import wandb
     wandb.init(project=wandb_project, name=wandb_run_name, config=config)
+    
+    # Log per-layer MoE configuration if using lists
+    if use_moe:
+        moe_config_log = {}
+        if isinstance(moe_num_experts, (list, tuple)):
+            moe_config_log['moe_num_experts_per_layer'] = list(moe_num_experts)
+            for i, num_exp in enumerate(moe_num_experts):
+                moe_config_log[f'moe_num_experts_layer_{i}'] = num_exp
+        else:
+            moe_config_log['moe_num_experts'] = moe_num_experts
+            
+        if isinstance(moe_num_experts_per_tok, (list, tuple)):
+            moe_config_log['moe_topk_per_layer'] = list(moe_num_experts_per_tok)
+            for i, topk in enumerate(moe_num_experts_per_tok):
+                moe_config_log[f'moe_topk_layer_{i}'] = topk
+        else:
+            moe_config_log['moe_num_experts_per_tok'] = moe_num_experts_per_tok
+            
+        # Log the per-layer configuration summary
+        wandb.config.update(moe_config_log)
+        print(f"Logged MoE per-layer configuration to wandb: {moe_config_log}")
 
 # training loop
 X, Y = get_batch('train') # fetch the very first batch

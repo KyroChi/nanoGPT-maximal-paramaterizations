@@ -150,10 +150,17 @@ class MLP(nn.Module):
 
 
 class MoE(nn.Module):
-    def __init__(self, config):
+    def __init__(self, config, num_experts=None, topk=None):
         super().__init__()
-        self.num_experts = config.moe_num_experts
-        self.topk = max(1, min(config.moe_num_experts_per_tok, self.num_experts))
+        # Allow per-layer override of num_experts and topk
+        if num_experts is not None:
+            self.num_experts = num_experts
+        else:
+            self.num_experts = config.moe_num_experts
+        if topk is not None:
+            self.topk = max(1, min(topk, self.num_experts))
+        else:
+            self.topk = max(1, min(config.moe_num_experts_per_tok, self.num_experts))
         in_dim = config.n_embd
         hidden = config.moe_ffn_hidden_size if config.moe_ffn_hidden_size > 0 else 4 * config.n_embd
         E = self.num_experts
@@ -302,14 +309,32 @@ class MoE(nn.Module):
 
 class Block(nn.Module):
 
-    def __init__(self, config):
+    def __init__(self, config, layer_idx=None):
         super().__init__()
         self.ln_1 = LayerNorm(config.n_embd, bias=config.bias)
         self.attn = CausalSelfAttention(config)
         self.ln_2 = LayerNorm(config.n_embd, bias=config.bias)
         self.use_moe = config.use_moe
         if config.use_moe:
-            self.mlp = MoE(config)
+            # Handle per-layer configuration for num_experts and topk
+            num_experts = None
+            topk = None
+            if layer_idx is not None:
+                # Check if moe_num_experts is a list
+                if isinstance(config.moe_num_experts, (list, tuple)):
+                    if layer_idx < len(config.moe_num_experts):
+                        num_experts = config.moe_num_experts[layer_idx]
+                    else:
+                        # Fallback to last value if list is shorter than n_layer
+                        num_experts = config.moe_num_experts[-1]
+                # Check if moe_num_experts_per_tok is a list
+                if isinstance(config.moe_num_experts_per_tok, (list, tuple)):
+                    if layer_idx < len(config.moe_num_experts_per_tok):
+                        topk = config.moe_num_experts_per_tok[layer_idx]
+                    else:
+                        # Fallback to last value if list is shorter than n_layer
+                        topk = config.moe_num_experts_per_tok[-1]
+            self.mlp = MoE(config, num_experts=num_experts, topk=topk)
         else:
             self.mlp = MLP(config)
         # Store aux info from last forward pass (for MoE aux loss)
@@ -337,8 +362,8 @@ class GPTConfig:
     bias: bool = True # True: bias in Linears and LayerNorms, like GPT-2. False: a bit better and faster
     # MoE settings
     use_moe: bool = False
-    moe_num_experts: int = 8
-    moe_num_experts_per_tok: int = 2  # top-k experts per token
+    moe_num_experts: int = 8  # Can be int or list[int] for per-layer configuration
+    moe_num_experts_per_tok: int = 2  # Can be int or list[int] for per-layer configuration (top-k experts per token)
     moe_ffn_hidden_size: int = 0  # 0 means use 4 * n_embd (default MLP hidden size)
 
 class GPT(nn.Module):
@@ -353,7 +378,7 @@ class GPT(nn.Module):
             wte = nn.Embedding(config.vocab_size, config.n_embd),
             wpe = nn.Embedding(config.block_size, config.n_embd),
             drop = nn.Dropout(config.dropout),
-            h = nn.ModuleList([Block(config) for _ in range(config.n_layer)]),
+            h = nn.ModuleList([Block(config, layer_idx=i) for i in range(config.n_layer)]),
             ln_f = LayerNorm(config.n_embd, bias=config.bias),
         ))
         self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)

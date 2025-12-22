@@ -25,8 +25,16 @@ dropout = 0.0
 
 # MoE configuration
 use_moe = True
+# Option 1: Uniform configuration (same for all layers)
 moe_num_experts = 6
 moe_num_experts_per_tok = 2  # top-2 routing
+
+# Option 2: Per-layer configuration (uncomment to use)
+# Specify different number of experts per layer (must have n_layer elements)
+# moe_num_experts = [8, 8, 6, 6, 4, 4, 4, 4, 6, 6, 8, 8]  # More experts in early/late layers
+# Specify different top-k per layer (must have n_layer elements)
+# moe_num_experts_per_tok = [2, 2, 2, 2, 1, 1, 1, 1, 2, 2, 2, 2]  # Top-1 in middle layers
+
 # Hidden size chosen so active params ≈ 124M
 # Each expert: 768 * 1536 * 2 = 2.36M params
 # Top-2 active: 4.72M per layer (matches GPT-2 MLP)
