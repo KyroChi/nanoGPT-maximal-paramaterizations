@@ -165,14 +165,22 @@ class MoE(nn.Module):
         hidden = config.moe_ffn_hidden_size if config.moe_ffn_hidden_size > 0 else 4 * config.n_embd
         E = self.num_experts
         self.config = config
+        self.single_layer_experts = config.moe_single_layer_experts
 
         self.w_gating = nn.Linear(in_dim, E, bias=False)
         self.router_bias = nn.Parameter(torch.zeros(E))
 
-        self.fc1_weight = nn.Parameter(torch.randn(E, in_dim, hidden) * 0.02)
-        self.fc1_bias = nn.Parameter(torch.zeros(E, hidden)) if config.bias else None
-        self.fc2_weight = nn.Parameter(torch.randn(E, hidden, in_dim) * 0.02)
-        self.fc2_bias = nn.Parameter(torch.zeros(E, in_dim)) if config.bias else None
+        if self.single_layer_experts:
+            # Single layer experts: shared fc1, then route to per-expert fc2
+            self.fc1 = nn.Linear(in_dim, hidden, bias=config.bias)
+            self.fc2_weight = nn.Parameter(torch.randn(E, hidden, in_dim) * 0.02)
+            self.fc2_bias = nn.Parameter(torch.zeros(E, in_dim)) if config.bias else None
+        else:
+            # Standard MoE: route first, then per-expert fc1 and fc2
+            self.fc1_weight = nn.Parameter(torch.randn(E, in_dim, hidden) * 0.02)
+            self.fc1_bias = nn.Parameter(torch.zeros(E, hidden)) if config.bias else None
+            self.fc2_weight = nn.Parameter(torch.randn(E, hidden, in_dim) * 0.02)
+            self.fc2_bias = nn.Parameter(torch.zeros(E, in_dim)) if config.bias else None
 
         self.act = nn.GELU()
         self.dropout = nn.Dropout(config.dropout)
@@ -272,6 +280,67 @@ class MoE(nn.Module):
 
         return y
 
+    def _forward_sparse_single_layer(self, h, topk_idx, topk_vals):
+        """Forward pass for single layer experts: h is already fc1+activation output."""
+        B, T, H = h.shape
+        k = topk_idx.size(2)
+        device = h.device
+        dtype = h.dtype
+
+        flat_idx = topk_idx.reshape(-1)  # (N,) where N = B*T*k
+        N = flat_idx.numel()
+        h_exp = h.unsqueeze(2).expand(-1, -1, k, -1).reshape(N, H)  # (N, H)
+
+        unique_experts, inverse = torch.unique(flat_idx, return_inverse=True)
+        U = unique_experts.numel()
+        if U == 0:
+            return torch.zeros(B, T, k, self.config.n_embd, device=device, dtype=dtype)
+
+        perm = torch.argsort(inverse)
+        inverse_sorted = inverse[perm]
+        h_sorted = h_exp[perm]  # (N, H)
+
+        counts = torch.bincount(inverse_sorted, minlength=U)
+        max_count = int(counts.max().item())
+        starts = torch.cat((torch.tensor([0], device=device, dtype=counts.dtype), counts.cumsum(0)[:-1]))
+        
+        # Convert to Python lists once to avoid repeated GPU-CPU syncs in loops
+        counts_list = counts.cpu().tolist()
+        starts_list = starts.cpu().tolist()
+
+        h_grouped = torch.zeros(U, max_count, H, device=device, dtype=dtype)
+        for i in range(U):
+            cnt = counts_list[i]
+            if cnt == 0:
+                continue
+            s = starts_list[i]
+            h_grouped[i, :cnt] = h_sorted[s:s+cnt]
+
+        weight2_u = self.fc2_weight[unique_experts]  # (U, H, C)
+        if self.fc2_bias is not None:
+            bias2_u = self.fc2_bias[unique_experts]  # (U, C)
+
+        out_grouped = torch.bmm(h_grouped, weight2_u)
+        if self.fc2_bias is not None:
+            out_grouped = out_grouped + bias2_u.unsqueeze(1)
+
+        C = out_grouped.size(-1)
+        out_sorted_flat = torch.empty(N, C, device=device, dtype=dtype)
+        for i in range(U):
+            cnt = counts_list[i]
+            if cnt == 0:
+                continue
+            s = starts_list[i]
+            out_sorted_flat[s:s+cnt] = out_grouped[i, :cnt]
+
+        inv_perm = torch.empty_like(perm)
+        inv_perm[perm] = torch.arange(N, device=device)
+        out_flat = out_sorted_flat[inv_perm]
+        out_view = out_flat.view(B, T, k, C)
+
+        y = (out_view * topk_vals.unsqueeze(-1)).sum(dim=2)  # (B, T, C)
+        return y
+
     def forward(self, x):
         """
         Forward pass through MoE layer.
@@ -287,18 +356,40 @@ class MoE(nn.Module):
         device = x.device
         E = self.num_experts
 
-        logits = self.w_gating(x) + self.router_bias.view(1, 1, E)
-        gates = F.softmax(logits, dim=-1)  # (B, T, E)
+        if self.single_layer_experts:
+            # Single layer experts: apply shared fc1 + activation first
+            h = self.fc1(x)  # (B, T, H)
+            h = self.act(h)
+            h = self.dropout(h)
+            
+            # Then route based on the hidden representation (or could use x, but h makes more sense)
+            # Route based on original input x for consistency with standard MoE
+            logits = self.w_gating(x) + self.router_bias.view(1, 1, E)
+            gates = F.softmax(logits, dim=-1)  # (B, T, E)
 
-        importance = gates.sum(dim=(0, 1))  # (E,)
-        importance_mean = importance / (B * T)
-        aux_loss = (E * (importance_mean ** 2).sum()).to(device)
+            importance = gates.sum(dim=(0, 1))  # (E,)
+            importance_mean = importance / (B * T)
+            aux_loss = (E * (importance_mean ** 2).sum()).to(device)
 
-        topk_vals, topk_idx = gates.topk(self.topk, dim=-1)  # (B, T, topk)
-        # Renormalize top-k values
-        topk_vals = topk_vals / topk_vals.sum(dim=-1, keepdim=True).clamp_min(1e-6)
+            topk_vals, topk_idx = gates.topk(self.topk, dim=-1)  # (B, T, topk)
+            # Renormalize top-k values
+            topk_vals = topk_vals / topk_vals.sum(dim=-1, keepdim=True).clamp_min(1e-6)
 
-        y = self._forward_sparse(x, topk_idx, topk_vals)
+            y = self._forward_sparse_single_layer(h, topk_idx, topk_vals)
+        else:
+            # Standard MoE: route first, then per-expert processing
+            logits = self.w_gating(x) + self.router_bias.view(1, 1, E)
+            gates = F.softmax(logits, dim=-1)  # (B, T, E)
+
+            importance = gates.sum(dim=(0, 1))  # (E,)
+            importance_mean = importance / (B * T)
+            aux_loss = (E * (importance_mean ** 2).sum()).to(device)
+
+            topk_vals, topk_idx = gates.topk(self.topk, dim=-1)  # (B, T, topk)
+            # Renormalize top-k values
+            topk_vals = topk_vals / topk_vals.sum(dim=-1, keepdim=True).clamp_min(1e-6)
+
+            y = self._forward_sparse(x, topk_idx, topk_vals)
 
         return y, {
             "router_logits": logits.view(-1, E),
@@ -365,6 +456,7 @@ class GPTConfig:
     moe_num_experts: int = 8  # Can be int or list[int] for per-layer configuration
     moe_num_experts_per_tok: int = 2  # Can be int or list[int] for per-layer configuration (top-k experts per token)
     moe_ffn_hidden_size: int = 0  # 0 means use 4 * n_embd (default MLP hidden size)
+    moe_single_layer_experts: bool = False  # If True, use shared fc1+activation before routing, then per-expert fc2
 
 class GPT(nn.Module):
 

@@ -60,6 +60,7 @@ use_moe = False
 moe_num_experts = 8
 moe_num_experts_per_tok = 2
 moe_ffn_hidden_size = 0  # 0 means use 4 * n_embd
+moe_single_layer_experts = False  # If True, use shared fc1+activation before routing, then per-expert fc2
 moe_aux_loss_weight = 0.01  # weight for load balancing loss
 # adamw optimizer
 learning_rate = 6e-4 # max learning rate
@@ -81,7 +82,7 @@ device = 'cuda' # examples: 'cpu', 'cuda', 'cuda:0', 'cuda:1' etc., or try 'mps'
 dtype = 'bfloat16' if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else 'float16' # 'float32', 'bfloat16', or 'float16', the latter will auto implement a GradScaler
 compile = False # use PyTorch 2.0 to compile the model to be faster
 # -----------------------------------------------------------------------------
-config_keys = [k for k,v in globals().items() if not k.startswith('_') and isinstance(v, (int, float, bool, str, list, tuple))]
+config_keys = [k for k,v in globals().items() if not k.startswith('_') and isinstance(v, (int, float, bool, str))]
 exec(open('configurator.py').read()) # overrides from command line or config file
 config = {k: globals()[k] for k in config_keys} # will be useful for logging
 # -----------------------------------------------------------------------------
@@ -156,7 +157,8 @@ model_args = dict(n_layer=n_layer, n_head=n_head, n_embd=n_embd, block_size=bloc
                   bias=bias, vocab_size=None, dropout=dropout,
                   use_moe=use_moe, moe_num_experts=moe_num_experts, 
                   moe_num_experts_per_tok=moe_num_experts_per_tok,
-                  moe_ffn_hidden_size=moe_ffn_hidden_size) # start with model_args from command line
+                  moe_ffn_hidden_size=moe_ffn_hidden_size,
+                  moe_single_layer_experts=moe_single_layer_experts) # start with model_args from command line
 if init_from == 'scratch':
     # init a new model from scratch
     print("Initializing a new model from scratch")
@@ -274,27 +276,6 @@ def get_lr(it):
 if wandb_log and master_process:
     import wandb
     wandb.init(project=wandb_project, name=wandb_run_name, config=config)
-    
-    # Log per-layer MoE configuration if using lists
-    if use_moe:
-        moe_config_log = {}
-        if isinstance(moe_num_experts, (list, tuple)):
-            moe_config_log['moe_num_experts_per_layer'] = list(moe_num_experts)
-            for i, num_exp in enumerate(moe_num_experts):
-                moe_config_log[f'moe_num_experts_layer_{i}'] = num_exp
-        else:
-            moe_config_log['moe_num_experts'] = moe_num_experts
-            
-        if isinstance(moe_num_experts_per_tok, (list, tuple)):
-            moe_config_log['moe_topk_per_layer'] = list(moe_num_experts_per_tok)
-            for i, topk in enumerate(moe_num_experts_per_tok):
-                moe_config_log[f'moe_topk_layer_{i}'] = topk
-        else:
-            moe_config_log['moe_num_experts_per_tok'] = moe_num_experts_per_tok
-            
-        # Log the per-layer configuration summary
-        wandb.config.update(moe_config_log)
-        print(f"Logged MoE per-layer configuration to wandb: {moe_config_log}")
 
 # training loop
 X, Y = get_batch('train') # fetch the very first batch
@@ -352,11 +333,12 @@ while True:
     # and using the GradScaler if data type is float16
     aux_loss_accum = 0.0
     for micro_step in range(gradient_accumulation_steps):
-        if ddp:
+        if ddp and not enable_fsdb:
             # in DDP training we only need to sync gradients at the last micro step.
             # the official way to do this is with model.no_sync() context manager, but
             # I really dislike that this bloats the code and forces us to repeat code
             # looking at the source of that context manager, it just toggles this variable
+            # NOTE: This only works with DDP, not FSDP. FSDP handles gradient sync internally.
             model.require_backward_grad_sync = (micro_step == gradient_accumulation_steps - 1)
         with ctx:
             logits, loss = model(X, Y)
