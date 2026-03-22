@@ -41,7 +41,37 @@ export WANDB_API_KEY=<your-key>
 uv run wandb login
 ```
 
-### 5. Run a training job
+### 5. Benchmark batch size
+
+Before running experiments, benchmark to find the optimal microbatch size for your GPU. This sweeps batch sizes across model configs and recommends the one that maximizes throughput (tokens/sec):
+
+```bash
+uv run python scripts/benchmark.py
+```
+
+This benchmarks the proxy (768w) and target (1536w) models by default. Output includes actual tokens/sec, MFU%, peak memory, and a recommended unified batch size.
+
+Options:
+```bash
+# Benchmark a specific model
+uv run python scripts/benchmark.py --n_embd 1536 --n_layer 12
+
+# Custom batch sizes
+uv run python scripts/benchmark.py --batch_sizes 4,8,16,32,48,64,96,128
+
+# Set target tokens for time estimates (default 500M)
+uv run python scripts/benchmark.py --target_tokens 1_000_000_000
+
+# Save results to JSON
+uv run python scripts/benchmark.py --output benchmark_results.json
+
+# Disable torch.compile (faster startup, lower throughput)
+uv run python scripts/benchmark.py --no-compile
+```
+
+Use the recommended `batch_size` in your experiment configs. Set `gradient_accumulation_steps` to achieve whatever effective batch you want — throughput (tokens/sec) is the same regardless of grad accum.
+
+### 6. Run a training job
 
 Single GPU:
 ```bash
@@ -53,7 +83,7 @@ Multi-GPU (DDP):
 uv run torchrun --standalone --nproc_per_node=4 gqa_mup/train.py
 ```
 
-### 6. Run experiments
+### 7. Run experiments
 
 With SLURM:
 ```bash
@@ -70,7 +100,7 @@ Dry run (prints commands without executing):
 python experiments/local_orchestrator.py --config_generator_file experiments/configs/width_only.py --dry-run
 ```
 
-### 7. Coordinate checking
+### 8. Coordinate checking
 
 ```bash
 # Locally (run experiment index 0)
@@ -80,7 +110,7 @@ bash scripts/coord_check.sh 0
 sbatch --array=0-5 scripts/coord_check.sh
 ```
 
-### 8. Extract W&B results
+### 9. Extract W&B results
 
 ```bash
 uv run python analysis/crawl_wandb.py --entity <your-entity> --project <project-name> --output-dir results/
@@ -107,7 +137,8 @@ analysis/                   # Results extraction and figures
   crawl_wandb.py            # W&B data extraction
   notebooks/                # 6 analysis/figure notebooks
 
-scripts/                    # Shell scripts
+scripts/                    # Shell scripts and utilities
+  benchmark.py              # GPU batch size tuning (run before experiments)
   coord_check.sh            # Coordinate checking (SLURM or local)
   job.sh                    # SLURM job template
 ```
