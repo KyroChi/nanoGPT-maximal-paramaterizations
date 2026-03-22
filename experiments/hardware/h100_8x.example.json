@@ -1,0 +1,12 @@
+{
+    "batch_size": 64,
+    "gradient_accumulation_steps": 1,
+    "n_gpus": 8,
+    "sbatch_nodes": 1,
+    "sbatch_mem": 256,
+    "partition": "gpu",
+    "qos": "normal",
+    "compile": "true",
+    "dtype": "bfloat16",
+    "_comment": "Run scripts/benchmark.py on an H100 to find optimal batch_size, then copy this file to h100_8x.json and update."
+}

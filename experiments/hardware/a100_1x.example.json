@@ -1,0 +1,8 @@
+{
+    "batch_size": 32,
+    "gradient_accumulation_steps": 4,
+    "n_gpus": 1,
+    "compile": "true",
+    "dtype": "bfloat16",
+    "_comment": "Run scripts/benchmark.py to find optimal batch_size for your GPU, then copy this file to a100_1x.json and update batch_size and gradient_accumulation_steps."
+}

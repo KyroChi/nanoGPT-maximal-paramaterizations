@@ -3,10 +3,15 @@ Orchestrator for submitting experiment configurations as SLURM array jobs.
 
 Reads a config generator script that outputs one JSON config per line,
 then submits them as a SLURM job array with configurable concurrency.
+
+Hardware overrides (--hardware) let you separate science params from infra
+params. Pass a JSON file with batch_size, n_gpus, SLURM settings, etc.
+to override those keys in every experiment config.
 """
 
 import argparse
 import datetime
+import json
 import os
 import subprocess
 
@@ -19,8 +24,18 @@ parser.add_argument('--max_concurrent', type=int, default=30,
                     help='Maximum number of concurrent SLURM array tasks.')
 parser.add_argument('--dry-run', action='store_true',
                     help='Pass --dry-run to the config generator and print the script without submitting.')
+parser.add_argument('--hardware', type=str, default=None,
+                    help='Path to a JSON file with hardware-specific overrides '
+                         '(batch_size, n_gpus, sbatch_mem, partition, etc.)')
 
 args = parser.parse_args()
+
+# Load hardware overrides if provided
+hardware_overrides = {}
+if args.hardware:
+    with open(args.hardware) as f:
+        hardware_overrides = json.load(f)
+    print(f"Hardware overrides from {args.hardware}: {hardware_overrides}")
 
 now = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 base_logging_dir = "experiments/slurm_logs"
@@ -50,6 +65,18 @@ configs = run_config_generator(args.config_generator_file)
 if configs is None:
     print("Failed to generate configurations. Exiting.")
     exit(1)
+
+# Apply hardware overrides to each config line
+if hardware_overrides:
+    merged_lines = []
+    for line in configs.split('\n'):
+        line = line.strip()
+        if not line:
+            continue
+        conf = json.loads(line)
+        conf.update(hardware_overrides)
+        merged_lines.append(json.dumps(conf))
+    configs = '\n'.join(merged_lines)
 
 num_experiments = len(configs.split('\n'))
 print(f"Generated {num_experiments} experiment configurations.")
