@@ -156,6 +156,70 @@ Commit after polishing all notebooks.
 
 ---
 
+## Compute Estimates
+
+All estimates assume 40% MFU on 1xA100 (312 TFLOPS BF16 peak), effective
+batch size = 256 sequences (262K tokens/iter). Actual MFU will depend on
+compile mode, batch size, and memory pressure. 30% is pessimistic, 50% is
+optimistic — 40% is a reasonable guess before benchmarking.
+
+**First priority: benchmark actual iter/sec.** Run a 50-iteration smoke test
+at each model size and measure wall-clock time. Then scale from there. The
+estimates below give the structure; plug in real sec/iter once measured.
+
+### Per-run time: n_embd=1536, n_layer=12, n_head=24
+
+The GQA head count barely affects compute (KV projections are a small
+fraction of total FLOPs). All configs are ~450M params, ~6 sec/iter.
+
+| n_kv_head |  r | Params |  s/iter |    2k |    5k |   10k |    50k |   100k |
+|----------:|---:|-------:|--------:|------:|------:|------:|-------:|-------:|
+|         1 | 24 |  442M  |  6.0s   |  3.4h |  8.4h | 16.8h |  83.9h | 167.8h |
+|         2 | 12 |  444M  |  6.1s   |  3.4h |  8.4h | 16.9h |  84.3h | 168.6h |
+|         3 |  8 |  446M  |  6.1s   |  3.4h |  8.5h | 16.9h |  84.7h | 169.5h |
+|         4 |  6 |  449M  |  6.1s   |  3.4h |  8.5h | 17.0h |  85.1h | 170.3h |
+|         6 |  4 |  453M  |  6.2s   |  3.4h |  8.6h | 17.2h |  86.0h | 171.9h |
+|        12 |  2 |  468M  |  6.4s   |  3.5h |  8.8h | 17.7h |  88.4h | 176.9h |
+
+**1 full set** (all 6 kv configs, 1 LR, 1 seed):
+
+| Steps |  A100-hrs |
+|------:|----------:|
+|    2k |     20.5h |
+|    5k |     51.3h |
+|   10k |    102.5h |
+|   50k |    512.5h |
+|  100k |   1025.0h |
+
+### Sweep costs (6 kv_head configs included in all)
+
+| Sweep design                          | Runs |   2k steps |   5k steps |  10k steps |
+|:--------------------------------------|-----:|-----------:|-----------:|-----------:|
+| Minimal: 5 LR x 2 seed x 1 param     |   60 |    205 hrs |    513 hrs |  1,025 hrs |
+| SP vs muP: 5 LR x 2 seed x 2 param   |  120 |    410 hrs |  1,025 hrs |  2,050 hrs |
+| Medium: 7 LR x 3 seed x 2 param      |  252 |    861 hrs |  2,153 hrs |  4,305 hrs |
+| Full: 9 LR x 3 seed x 2 param        |  324 |  1,107 hrs |  2,768 hrs |  5,535 hrs |
+
+### Reference: proxy model (n_embd=768, 154M params)
+
+~2.2 sec/iter at 40% MFU. Per run: 1.2h (2k), 3.0h (5k), 6.0h (10k).
+
+### Implications
+
+- 50k–100k steps at 1536 width is **not feasible on 1xA100** for a sweep.
+  A single run at 50k steps takes 3.5 days.
+- **2k–5k steps is the realistic range for 1xA100 validation.** 2k steps
+  processes ~500M tokens, enough to see the mu-transfer signal if the
+  models are wide enough.
+- The full SP-vs-muP sweep at 2k steps across 6 kv configs with 5 LRs and
+  2 seeds is ~410 A100-hours = **17 days on 1xA100**.
+- For cluster handoff (50k+ steps), budget ~500–1000 A100-hours per
+  parameterization for the full kv-head sweep.
+- The proxy model (768 wide) is cheap: full sweep at 5k steps is a few
+  dozen A100-hours and can be done on 1xA100 in 1-2 days.
+
+---
+
 ## Phase 3: Mu-Transfer Experiment
 
 ### 3.1 Goal
