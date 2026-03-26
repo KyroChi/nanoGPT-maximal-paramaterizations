@@ -22,12 +22,43 @@ Prove the refactored code works by running a small width-transfer
 experiment (Experiment 1) and inspecting the results. If the muP curve
 shows LR transfer and the SP curve doesn't, the code is correct.
 
-### Step 1: Fresh setup
+### Step 1: GitHub auth + fresh setup
 
+Lambda Labs instances don't have your GitHub credentials. Set up SSH key
+auth so you can clone private repos and push:
+
+```bash
+# Generate a new SSH key (hit enter for all prompts, no passphrase needed)
+ssh-keygen -t ed25519 -C "kyle-lambda" -f ~/.ssh/id_ed25519 -N ""
+
+# Print the public key
+cat ~/.ssh/id_ed25519.pub
+```
+
+Copy the public key output, then add it to GitHub:
+1. Go to https://github.com/settings/keys
+2. Click "New SSH key"
+3. Title: "Lambda Labs H100" (or whatever)
+4. Paste the key
+5. Click "Add SSH key"
+
+Test it works:
+```bash
+ssh -T git@github.com
+# Should say: "Hi KyroChi! You've successfully authenticated..."
+```
+
+Now clone:
 ```bash
 git clone git@github.com:KyroChi/nanoGPT-maximal-paramaterizations.git
 cd nanoGPT-maximal-paramaterizations
 git checkout paper-release
+
+# Set git identity for commits
+git config user.email "your@email.com"
+git config user.name "Kyle Chickering"
+
+# Install
 uv sync --group data --group analysis
 ```
 
