@@ -15,7 +15,7 @@ git checkout paper-release
 
 # 2. Install (requires uv: https://docs.astral.sh/uv/getting-started/installation/)
 curl -LsSf https://astral.sh/uv/install.sh | sh
-uv sync --group data
+uv sync --extra data
 
 # 3. Prepare data (~1-2 hours, ~54GB download, ~17GB on disk)
 uv run python data/prepare_openwebtext.py

@@ -19,8 +19,8 @@ git checkout paper-release
 uv sync
 ```
 
-For analysis/notebooks: `uv sync --group analysis`
-For data prep (huggingface datasets): `uv sync --group data`
+For analysis/notebooks: `uv sync --extra analysis`
+For data prep (huggingface datasets): `uv sync --extra data`
 
 ### 3. Prepare OpenWebText
 

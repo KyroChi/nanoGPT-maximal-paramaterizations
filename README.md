@@ -16,10 +16,10 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 uv sync
 
 # For analysis/notebooks
-uv sync --group analysis
+uv sync --extra analysis
 
 # For data preparation
-uv sync --group data
+uv sync --extra data
 ```
 
 ### Data

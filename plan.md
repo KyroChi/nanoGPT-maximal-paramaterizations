@@ -69,7 +69,7 @@ git config user.email "your@email.com"
 git config user.name "Kyle Chickering"
 
 # Install
-uv sync --group data --group analysis
+uv sync --extra data --extra analysis
 ```
 
 Verify GPU:
