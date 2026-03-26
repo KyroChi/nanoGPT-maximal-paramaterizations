@@ -24,9 +24,13 @@ analysis = [
     "pandas>=2.1.0",
 ]
 
-[tool.uv]
-extra-index-url = ["https://download.pytorch.org/whl/cu124"]
-index-strategy = "unsafe-best-match"
+[[tool.uv.index]]
+url = "https://download.pytorch.org/whl/cu124"
+name = "pytorch-cu124"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu124" }
 
 [build-system]
 requires = ["hatchling"]
