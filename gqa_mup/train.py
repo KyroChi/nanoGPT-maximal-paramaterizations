@@ -58,7 +58,7 @@ wandb_run_name = 'gpt2'
 # data
 dataset = 'openwebtext'
 slim_pajama_path = '' # path prefix for SlimPajama IndexedDataset (leave empty to use memmap)
-gradient_accumulation_steps = 5 * 8 # used to simulate larger batch sizes
+gradient_accumulation_steps = 1
 batch_size = 12 # if gradient_accumulation_steps > 1, this is the micro-batch size
 block_size = 1024
 # model

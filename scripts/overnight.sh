@@ -32,7 +32,8 @@ echo ""
 echo "=== Smoke test: 256w proxy ==="
 uv run python gqa_mup/train.py \
     --n_embd=256 --n_head=2 --n_kv_head=1 --n_layer=3 \
-    --batch_size=64 --max_iters=50 --eval_interval=25 --eval_iters=5 \
+    --batch_size=32 --gradient_accumulation_steps=1 \
+    --max_iters=50 --eval_interval=25 --eval_iters=5 \
     --learning_rate=3e-4 --mup=True --mup_multiplier=1.0 \
     --impl=gqa_mup --wandb_log=True --wandb_project=gqa-mup-smoke \
     --wandb_run_name=smoke_256w --compile=False --dtype=bfloat16
@@ -42,7 +43,8 @@ echo ""
 echo "=== Smoke test: 1536w ==="
 uv run python gqa_mup/train.py \
     --n_embd=1536 --n_head=12 --n_kv_head=1 --n_layer=3 \
-    --batch_size=16 --max_iters=50 --eval_interval=25 --eval_iters=5 \
+    --batch_size=8 --gradient_accumulation_steps=1 \
+    --max_iters=50 --eval_interval=25 --eval_iters=5 \
     --learning_rate=3e-4 --mup=True --mup_multiplier=6.0 \
     --impl=gqa_mup --wandb_log=True --wandb_project=gqa-mup-smoke \
     --wandb_run_name=smoke_1536w --compile=False --dtype=bfloat16
