@@ -48,6 +48,16 @@ ssh -T git@github.com
 # Should say: "Hi KyroChi! You've successfully authenticated..."
 ```
 
+Install uv and Claude Code:
+```bash
+# uv (Python package manager)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+source ~/.bashrc  # or restart shell
+
+# Claude Code
+npm install -g @anthropic-ai/claude-code
+```
+
 Now clone:
 ```bash
 git clone git@github.com:KyroChi/nanoGPT-maximal-paramaterizations.git
