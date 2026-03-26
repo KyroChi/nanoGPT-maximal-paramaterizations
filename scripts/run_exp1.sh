@@ -47,7 +47,7 @@ for config_line in "${CONFIGS[@]}"; do
     read -r impl mup n_kv kv_label max_iters <<< "$config_line"
 
     if [ "$mup" = "True" ]; then
-        mup_mult=$(echo "scale=4; $N_EMBD / 256" | bc)
+        mup_mult=$(python3 -c "print($N_EMBD / 256)")
     else
         mup_mult=1
     fi
