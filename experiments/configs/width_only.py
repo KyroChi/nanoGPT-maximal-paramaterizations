@@ -66,11 +66,11 @@ for mup in [True, False]:
                 if mup:
                     conf['mup'] = 'true'
                     conf['mup_multiplier'] = conf['n_embd'] / 256
-                    conf['impl'] = 'tpv_left_impl'
+                    conf['impl'] = 'mup'
                 else:
                     conf['mup'] = 'false'
                     conf['mup_multiplier'] = 1
-                    conf['impl'] = 'standard_param_impl'
+                    conf['impl'] = 'sp'
                 configs.append(conf)
 
 if __name__ == "__main__":

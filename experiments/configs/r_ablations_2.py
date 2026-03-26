@@ -66,8 +66,7 @@ learning_rate_samples = 11 if PROD else 1
 learning_rates = [10**p for p in np.linspace(-3, -1.75, learning_rate_samples)] if PROD else [1e-2]
 
 seeds = [42, 43, 44] if PROD else [42]
-# impls = ['standard_param_impl', 'xllm_impl', 'kyle_impl'] #['tpv_left_impl_new_kv_2', 'standard_param_impl'] #'tpv_left_impl_new_kv_2', 'mengxi_impl', 'standard_param_impl']
-impls = ['tpv_left_impl_no_kv', 'tpv_left_impl_new_kv_2']
+impls = ['mup_no_kv', 'gqa_mup']
 
 configs = []
 for seed in seeds:
@@ -77,7 +76,7 @@ for seed in seeds:
                 conf = deepcopy(config)
                 conf['learning_rate'] = lr
                 conf['seed'] = seed
-                conf['mup'] = 'false' if impl == 'standard_param_impl' else 'true'
+                conf['mup'] = 'false' if impl == 'sp' else 'true'
                 conf['mup_multiplier'] = 1.0 
                 conf['impl'] = impl
                 conf['min_lr'] = lr / 10
