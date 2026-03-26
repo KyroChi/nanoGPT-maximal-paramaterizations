@@ -132,7 +132,7 @@ print(iters)
                 --impl=$impl --seed=$SEED \
                 --wandb_log=True --wandb_project=$WANDB_PROJECT \
                 --wandb_run_name=$run_name \
-                --compile=True --dtype=$DTYPE
+                --compile=False --dtype=$DTYPE
         done
     done
 done
