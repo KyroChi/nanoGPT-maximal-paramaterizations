@@ -95,7 +95,7 @@ seed = 42
 init_std = 0.02
 coord_check = False
 avg_interval = 30
-normalization = "LayerNorm"
+normalization = "RMSNorm"
 # prelayer norm options ['None', 'LayerNorm', 'L2Norm']
 q_prelayer_normalization = 'None'
 k_prelayer_normalization = 'None'

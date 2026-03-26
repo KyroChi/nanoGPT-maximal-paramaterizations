@@ -43,19 +43,12 @@ class L2Norm(nn.Module):
         return self.mup_multiplier * normed
 
 class RMSNorm(nn.Module):
-    def __init__(self, config, eps=1e-3):
+    def __init__(self, config, eps=1e-8):
         super().__init__()
-        ndim = config.n_embd
-        self.mup_multiplier = config.mup_multiplier if hasattr(config, 'mup_multiplier') else 1
-        self.weight = nn.Parameter(
-            torch.ones(ndim) / self.mup_multiplier
-        )
         self.eps = eps
 
-    def forward(self, input):
-        mean = (input**2).mean(dim=-1, keepdim=True)
-        normed = input / torch.sqrt(mean + self.eps)
-        return self.mup_multiplier * self.weight * normed
+    def forward(self, x):
+        return x * torch.rsqrt(x.pow(2).mean(dim=-1, keepdim=True) + self.eps)
 
 
 class LayerNorm(nn.Module):
@@ -322,12 +315,12 @@ class GPTConfig:
     n_kv_head: int = 4
     n_embd: int = 768
     dropout: float = 0.0
-    bias: bool = True # True: bias in Linears and LayerNorms, like GPT-2. False: a bit better and faster
+    bias: bool = False
     mup: bool = False
     mup_multiplier: float = 1.0
     init_std: float = 0.02
     impl: dict = field(default_factory=standard_param_impl) # implementation details, see standard_param_impl and tpv_left_impl
-    normalization: str = "LayerNorm"
+    normalization: str = "RMSNorm"
     q_prelayer_normalization: str = 'None'
     k_prelayer_normalization: str = 'None'
     complete_p_layers: bool = False # if True, the depth multiplier is 1/n_layer, otherwise 1.0
@@ -556,13 +549,14 @@ class GPT(nn.Module):
         optim_groups.append(ut_group)
 
         layer_norms = [p for n, p in self.named_parameters() if 'ln_' in n]
-        layer_norms_group = {
-            'params': layer_norms,
-            'weight_decay': 0.0,  # no weight decay for layer norms
-            'lr_scale': self.impl['normalization']['lr_scale'](self.config.mup_multiplier),
-            'wd_scale': 1.0
-        }
-        optim_groups.append(layer_norms_group)
+        if layer_norms:
+            layer_norms_group = {
+                'params': layer_norms,
+                'weight_decay': 0.0,
+                'lr_scale': self.impl['normalization']['lr_scale'](self.config.mup_multiplier),
+                'wd_scale': 1.0
+            }
+            optim_groups.append(layer_norms_group)
 
         optimizer = torch.optim.AdamW(optim_groups, lr=learning_rate, betas=betas, eps=eps, weight_decay=weight_decay, **extra_args)
         print(f"using fused AdamW: {use_fused}")
