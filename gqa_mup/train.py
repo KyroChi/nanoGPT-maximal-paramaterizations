@@ -25,7 +25,7 @@ import time
 import torch
 
 from contextlib import nullcontext
-from gqa_mup.indexed_dataset import IndexedDataset
+# IndexedDataset imported lazily below (only needed for SlimPajama)
 from torch.distributed import destroy_process_group, init_process_group
 from torch.nn.parallel import DistributedDataParallel as DDP
 
@@ -168,6 +168,7 @@ if slim_pajama_path:
 
     compression_ratio = slim_pj_full_vocab_size // slim_pj_cropped_vocab_size
 
+    from gqa_mup.indexed_dataset import IndexedDataset
     slimpj_dataset = IndexedDataset(slim_pajama_path)
 
     dataset_idx = 0
