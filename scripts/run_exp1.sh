@@ -22,8 +22,8 @@ N_EMBD=1536
 N_HEAD=12       # head_dim = 1536/12 = 128
 N_LAYER=3
 BLOCK_SIZE=1024
-BATCH_SIZE=64
-GRAD_ACCUM=2    # effective batch = 128
+BATCH_SIZE=32
+GRAD_ACCUM=2    # effective batch = 64
 SEED=42
 TPP=5
 DTYPE=bfloat16
@@ -34,10 +34,10 @@ LRS=(0.002500 0.003536 0.005000 0.007071 0.010000)
 # Run order: gqa_mup first, then SP
 # Within each: r=1 first, then r=12
 CONFIGS=(
-    "gqa_mup True  12 r1  9193"
-    "gqa_mup True   1 r12 8697"
-    "sp      False 12 r1  9193"
-    "sp      False  1 r12 8697"
+    "gqa_mup True  12 r1  18386"
+    "gqa_mup True   1 r12 17395"
+    "sp      False 12 r1  18386"
+    "sp      False  1 r12 17395"
 )
 
 run_idx=0
