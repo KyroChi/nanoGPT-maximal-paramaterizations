@@ -27,23 +27,25 @@ fi
 echo "=== Data ready $(date) ==="
 ls -lh data/train.bin data/val.bin
 
-# Step 2: Smoke test 256w
+# Step 2: Smoke test 256w (with wandb)
 echo ""
 echo "=== Smoke test: 256w proxy ==="
 uv run python gqa_mup/train.py \
     --n_embd=256 --n_head=4 --n_kv_head=2 --n_layer=3 \
     --batch_size=64 --max_iters=50 --eval_interval=25 --eval_iters=5 \
     --learning_rate=3e-4 --mup=True --mup_multiplier=1.0 \
-    --impl=gqa_mup --wandb_log=False --compile=False --dtype=bfloat16
+    --impl=gqa_mup --wandb_log=True --wandb_project=gqa-mup-smoke \
+    --wandb_run_name=smoke_256w --compile=False --dtype=bfloat16
 
-# Step 3: Smoke test 1024w
+# Step 3: Smoke test 1024w (with wandb)
 echo ""
 echo "=== Smoke test: 1024w target ==="
 uv run python gqa_mup/train.py \
     --n_embd=1024 --n_head=16 --n_kv_head=4 --n_layer=3 \
     --batch_size=32 --max_iters=50 --eval_interval=25 --eval_iters=5 \
     --learning_rate=3e-4 --mup=True --mup_multiplier=4.0 \
-    --impl=gqa_mup --wandb_log=False --compile=False --dtype=bfloat16
+    --impl=gqa_mup --wandb_log=True --wandb_project=gqa-mup-smoke \
+    --wandb_run_name=smoke_1024w --compile=False --dtype=bfloat16
 
 # Step 4: Benchmark
 echo ""
@@ -52,4 +54,5 @@ uv run python scripts/benchmark.py --output benchmark_results.json
 
 echo ""
 echo "=== ALL DONE $(date) ==="
-echo "Check results: cat /tmp/overnight.log"
+echo "Check W&B: https://wandb.ai — project gqa-mup-smoke"
+echo "Check logs: cat /tmp/overnight.log"
