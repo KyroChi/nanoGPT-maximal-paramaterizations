@@ -221,7 +221,9 @@ if slim_pajama_path:
 
         return x, y
 else:
-    data_dir = os.path.join('data', dataset)
+    # Resolve data dir relative to repo root (parent of gqa_mup/)
+    _repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    data_dir = os.path.join(_repo_root, 'data')
     def get_batch(split):
         # We recreate np.memmap every batch to avoid a memory leak, as per
         # https://stackoverflow.com/questions/45132940/numpy-memmap-memory-usage-want-to-iterate-once/61472122#61472122
@@ -294,34 +296,28 @@ if init_from == 'scratch':
     non_embedding_params = model.get_num_params(non_embedding=True) / 1e6
 
     if coord_check:
-        from coordinate_checking import get_hooks
+        from gqa_mup.coord_check import get_hooks
         data = {}
         hooks = []
         for i, layer in enumerate(model.transformer.h):
-            mlp = layer.mlp
-
-            fc = mlp.c_fc
+            ffn = layer.ffn
             forward_hook = get_hooks(data, f"fc.{i}")
-            hook = fc.register_forward_hook(forward_hook)
-            hooks.append(hook)
-
-            c_proj = mlp.c_proj
+            hooks.append(ffn.c_fc.register_forward_hook(forward_hook))
             forward_hook = get_hooks(data, f"c_proj.{i}")
-            hook = c_proj.register_forward_hook(forward_hook)
-            hooks.append(hook)
+            hooks.append(ffn.c_proj.register_forward_hook(forward_hook))
 
             attn = layer.attn
-            forward_hook = get_hooks(data, f"attn.c_attn.{i}")
-            hook = attn.c_attn.register_forward_hook(forward_hook)
-            hooks.append(hook)
-
+            forward_hook = get_hooks(data, f"attn.c_q.{i}")
+            hooks.append(attn.c_q.register_forward_hook(forward_hook))
+            forward_hook = get_hooks(data, f"attn.c_k.{i}")
+            hooks.append(attn.c_k.register_forward_hook(forward_hook))
+            forward_hook = get_hooks(data, f"attn.c_v.{i}")
+            hooks.append(attn.c_v.register_forward_hook(forward_hook))
             forward_hook = get_hooks(data, f"attn.c_proj.{i}")
-            hook = attn.c_proj.register_forward_hook(forward_hook)
-            hooks.append(hook)
+            hooks.append(attn.c_proj.register_forward_hook(forward_hook))
 
-        forward_hook = get_hooks(data, f"lm_head")
-        hook = model.lm_head.register_forward_hook(forward_hook)
-        hooks.append(hook)
+        forward_hook = get_hooks(data, "lm_head")
+        hooks.append(model.lm_head.register_forward_hook(forward_hook))
 
 elif init_from == 'resume':
     print(f"Resuming training from {out_dir}")
@@ -627,12 +623,12 @@ if enable_checkpointing:
 
 if coord_check:
     import datetime
-    from coordinate_checking import dataframe_from_data
+    from gqa_mup.coord_check import dataframe_from_data
     now = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
-    df = dataframe_from_data(data, width=config['n_embd'], seed=seed)
+    df = dataframe_from_data(data, width=config['n_embd'], depth=config['n_layer'], seed=seed, tag='')
     df.to_csv(os.path.join(out_dir, f'coord_check_{now}.csv'), index=False)
-    print(f"Attempted to save coordinate checking data to {os.path.join(out_dir, f'coord_check_{now}.csv')}")
+    print(f"Saved coordinate checking data to {os.path.join(out_dir, f'coord_check_{now}.csv')}")
 
 if ddp:
     destroy_process_group()
