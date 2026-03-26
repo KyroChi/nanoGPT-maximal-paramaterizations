@@ -1,210 +1,178 @@
-# Handoff: A100 Local Testing → H100 SLURM Cluster
+# Cluster Handoff: Instructions for H+M
 
-This document describes the workflow for validating experiments on a single
-A100, then handing off to a collaborator with an H100 SLURM cluster.
+This document is everything you need to run the GQA-muP experiments on
+your SLURM cluster. Kyle has validated the code on a single H100 — you
+should not need to debug anything. If something fails, report the error
+to Kyle rather than trying to fix it.
 
-## The Problem
-
-Experiment configs currently bundle two kinds of settings:
-- **Science params** (model arch, LR, seeds, muP impl) — same everywhere
-- **Infra params** (batch_size, n_gpus, gradient_accumulation_steps, SLURM
-  settings) — depend on the hardware
-
-We need configs to work on both a 1xA100 and an 8xH100 node without
-editing the science params.
-
-## Solution: Infra Override Files
-
-Experiment configs define the science. Infra settings are overridden at
-launch time via a hardware profile.
-
-### Step 1: Create hardware profiles
-
-Create `experiments/hardware/a100_1x.json`:
-```json
-{
-    "batch_size": <from benchmark>,
-    "gradient_accumulation_steps": <computed>,
-    "n_gpus": 1,
-    "compile": true,
-    "dtype": "bfloat16"
-}
-```
-
-Create `experiments/hardware/h100_8x.json`:
-```json
-{
-    "batch_size": <from benchmark on H100>,
-    "gradient_accumulation_steps": <computed>,
-    "n_gpus": 8,
-    "sbatch_nodes": 1,
-    "sbatch_mem": 256,
-    "partition": "gpu",
-    "qos": "normal",
-    "compile": true,
-    "dtype": "bfloat16"
-}
-```
-
-The `batch_size` values come from running `scripts/benchmark.py` on each
-machine. The `gradient_accumulation_steps` is then chosen to hit a desired
-effective batch size:
-
-    effective_batch = batch_size * gradient_accumulation_steps * n_gpus
-
-### Step 2: Orchestrators apply hardware overrides
-
-Both orchestrators (`local_orchestrator.py` and `orchestrator.py`) accept
-a `--hardware` flag that merges the hardware profile into each experiment
-config, overriding any infra keys:
+## Quick Start
 
 ```bash
-# On A100
-python experiments/local_orchestrator.py \
-    --config_generator_file experiments/configs/mu_transfer_1gpu.py \
-    --hardware experiments/hardware/a100_1x.json
-
-# On H100 cluster
-python experiments/orchestrator.py \
-    --config_generator_file experiments/configs/mu_transfer_1gpu.py \
-    --hardware experiments/hardware/h100_8x.json
-```
-
----
-
-## Kyle's A100 Workflow
-
-### 1. Setup & data prep
-```bash
-uv sync --group data --group analysis
-uv run python data/prepare_openwebtext.py
-```
-
-### 2. Benchmark
-```bash
-uv run python scripts/benchmark.py --output experiments/hardware/a100_bench.json
-```
-Note the recommended batch_size, then create `experiments/hardware/a100_1x.json`.
-
-### 3. Smoke test
-Run a short training job to verify imports, model, data loading, wandb:
-```bash
-uv run python gqa_mup/train.py \
-    --n_embd=768 --n_head=12 --n_kv_head=4 --n_layer=12 \
-    --batch_size=<from benchmark> --max_iters=100 \
-    --learning_rate=3e-4 --mup=True --mup_multiplier=3.0 \
-    --impl=tpv_left_impl_new_kv_2 \
-    --wandb_log=True --wandb_project=gqa-mup-smoke-test \
-    --compile=True --device=cuda --dtype=bfloat16
-```
-
-### 4. Validate coord check
-```bash
-bash scripts/coord_check.sh 0
-```
-Check that CSV is produced in coord_check_test/.
-
-### 5. Run a TINY mu-transfer test
-Run just 2 LRs × 1 seed × proxy model only to verify the pipeline works
-end-to-end and produces W&B runs you can plot:
-```bash
-python experiments/local_orchestrator.py \
-    --config_generator_file experiments/configs/mu_transfer_1gpu.py \
-    --hardware experiments/hardware/a100_1x.json \
-    --max-experiments 2
-```
-Verify runs appear in W&B dashboard.
-
-### 6. (Optional) Run proxy-only sweep
-The proxy model (768w, ~154M params) is cheap. A full proxy LR sweep
-validates that the experiment design produces clean LR-vs-loss curves:
-```bash
-python experiments/local_orchestrator.py \
-    --config_generator_file experiments/configs/mu_transfer_1gpu.py \
-    --hardware experiments/hardware/a100_1x.json \
-    --max-experiments 54   # 2 params x 9 LRs x 3 seeds, proxy only
-```
-Eyeball the W&B results — the LR-vs-loss curves should be smooth parabolas
-with clear minima. If they're too noisy, increase max_iters in the config.
-
-### 7. Polish notebooks
-See plan.md Phase 2.
-
-### 8. Package for handoff
-```bash
-git add -A && git commit -m "validated on A100, ready for cluster"
-git push
-```
-
----
-
-## Collaborator's H100 Cluster Workflow
-
-### 1. Setup
-```bash
+# 1. Clone
 git clone git@github.com:KyroChi/nanoGPT-maximal-paramaterizations.git
 cd nanoGPT-maximal-paramaterizations
 git checkout paper-release
+
+# 2. Install (requires uv: https://docs.astral.sh/uv/getting-started/installation/)
+curl -LsSf https://astral.sh/uv/install.sh | sh
 uv sync --group data
+
+# 3. Prepare data (~1-2 hours, ~54GB download, ~17GB on disk)
 uv run python data/prepare_openwebtext.py
-export WANDB_API_KEY=<key>
+
+# 4. Set up W&B
+export WANDB_API_KEY=<your-key>
+
+# 5. Benchmark your hardware
+uv run python scripts/benchmark.py --output benchmark_results.json
+
+# 6. Run experiments (see below)
 ```
 
-### 2. Benchmark on H100
+## Prerequisites
+
+- Python 3.10+
+- NVIDIA GPUs with CUDA 12.x
+- ~25GB disk for data (train.bin + val.bin)
+- ~54GB temporary disk for HuggingFace cache during data prep
+- W&B account (all runs log to Weights & Biases)
+- `jq` installed (used by SLURM orchestrator for JSON parsing)
+
+## Experiments to Run
+
+### Experiment 2: GQA Ablation
+
+Varies the KV repetition factor r at fixed width 1536, comparing muP
+without GQA correction (`mup_no_kv`) vs our GQA-muP (`gqa_mup`).
+
+462 runs. Each run is ~1 hour on 1xH100. With cluster parallelism this
+should complete in minutes.
+
 ```bash
-uv run python scripts/benchmark.py --output experiments/hardware/h100_bench.json
-```
-Create `experiments/hardware/h100_8x.json` with the results.
+# Dry run — see what jobs would be submitted
+python experiments/orchestrator.py \
+    --config_generator_file experiments/configs/r_ablations_2.py \
+    --dry-run
 
-### 3. Run the full experiment
+# Submit
+python experiments/orchestrator.py \
+    --config_generator_file experiments/configs/r_ablations_2.py \
+    --max_concurrent 50
+```
+
+**W&B project name:** Set in the config file (currently
+`ablate-gqa-repetition-kyle-impl-6`). Change the `WANDB_PROJECT`
+variable at the top of `experiments/configs/r_ablations_2.py` if you
+want a different project name.
+
+### Experiment 3: Large-Scale Transfer
+
+3-scale width transfer (256w → 1024w → 4096w) comparing SP vs GQA-muP.
+
+96 runs. Largest model is 945M params (4096w, 3 layers).
+
+```bash
+# Dry run
+python experiments/orchestrator.py \
+    --config_generator_file experiments/configs/reviewer_transfer.py \
+    --dry-run
+
+# Submit
+python experiments/orchestrator.py \
+    --config_generator_file experiments/configs/reviewer_transfer.py \
+    --max_concurrent 30
+```
+
+**W&B project name:** `gqa-mup-reviewer-transfer`
+
+## Hardware Overrides
+
+The experiment configs have default batch_size and n_gpus values that
+may not match your cluster. You can override these without editing the
+configs:
+
+1. Create a JSON file, e.g. `experiments/hardware/cluster.json`:
+```json
+{
+    "batch_size": 64,
+    "gradient_accumulation_steps": 1,
+    "n_gpus": 8,
+    "sbatch_nodes": 1,
+    "sbatch_mem": 256,
+    "partition": "your-partition",
+    "qos": "your-qos",
+    "compile": "true",
+    "dtype": "bfloat16"
+}
+```
+
+2. Pass it to the orchestrator:
 ```bash
 python experiments/orchestrator.py \
-    --config_generator_file experiments/configs/mu_transfer_1gpu.py \
-    --hardware experiments/hardware/h100_8x.json
+    --config_generator_file experiments/configs/reviewer_transfer.py \
+    --hardware experiments/hardware/cluster.json \
+    --max_concurrent 30
 ```
 
-### 4. Extract results
+The hardware override merges into every experiment config, overwriting
+any matching keys. Science parameters (model arch, LR, seeds, impl) are
+not affected.
+
+**Important:** If you change `batch_size` or `gradient_accumulation_steps`
+or `n_gpus`, the effective batch size changes, which changes how many
+iterations are needed for the same token budget. The `reviewer_transfer.py`
+config computes `max_iters` from the token budget automatically, so
+overriding these is safe. The `r_ablations_2.py` config has hardcoded
+`max_iters` — if you change batch size there, the token budget will change.
+
+## Extracting Results
+
+After runs complete:
+
 ```bash
 uv run python analysis/crawl_wandb.py \
-    --entity <entity> --project mu-transfer-1gpu --output-dir results/
+    --entity <your-wandb-entity> \
+    --project gqa-mup-reviewer-transfer \
+    --output-dir results/reviewer_transfer/
+
+uv run python analysis/crawl_wandb.py \
+    --entity <your-wandb-entity> \
+    --project ablate-gqa-repetition-kyle-impl-6 \
+    --output-dir results/gqa_ablation/
 ```
 
----
+## Troubleshooting
 
-## Effective Batch Size Guidance
+**SLURM job fails immediately:** Check that `partition` and `qos` match
+your cluster. Use `--hardware` override or edit the config file.
 
-For mu-transfer experiments, the effective batch size should be the same
-across all model sizes and hardware configs. This ensures comparable
-training dynamics.
+**"jq: command not found":** Install jq: `sudo apt install jq` or
+`conda install -c conda-forge jq`.
 
-Pick one effective batch (e.g., 64 or 128 sequences = 64K–128K tokens),
-then compute gradient_accumulation_steps:
+**Data not found:** The training script expects `data/openwebtext/train.bin`
+and `data/openwebtext/val.bin` (note: inside a subdirectory). If you ran
+`prepare_openwebtext.py` from the repo root, the files will be at
+`data/train.bin` and `data/val.bin`. Either move them or create a symlink:
+```bash
+mkdir -p data/openwebtext
+ln -s ../train.bin data/openwebtext/train.bin
+ln -s ../val.bin data/openwebtext/val.bin
+```
 
-    grad_accum = effective_batch / (batch_size * n_gpus)
+**OOM:** Reduce `batch_size` in your hardware override and increase
+`gradient_accumulation_steps` proportionally to keep the same effective
+batch.
 
-| Hardware  | batch_size | n_gpus | grad_accum | effective_batch |
-|-----------|------------|--------|------------|-----------------|
-| 1xA100    | 32         | 1      | 4          | 128             |
-| 1xA100    | 32         | 1      | 2          | 64              |
-| 8xH100    | 32         | 8      | 1          | 256             |
-| 8xH100    | 64         | 8      | 1          | 512             |
+**Any other error:** Do not debug. Send the full error message and the
+command you ran to Kyle.
 
-(Replace batch_size with actual benchmark results.)
+## Do Not Modify
 
-The experiment configs should define `effective_batch` as the science
-parameter. The hardware override then fills in the concrete batch_size
-and gradient_accumulation_steps.
+- Anything in `gqa_mup/` (model, training loop, muP implementations)
+- LR ranges, seed lists, or impl names in experiment configs
+- The `--impl` or `--mup` or `--mup_multiplier` values
 
----
-
-## What the Collaborator Needs to Know
-
-1. **Read CLAUDE.md** for setup and project overview
-2. **Read plan.md** for compute estimates and experiment design
-3. **Run benchmark.py** to get H100-specific batch sizes
-4. **Check W&B** — all runs log to W&B. The wandb_project in the config
-   determines where runs go. Coordinate on the W&B entity/project name.
-5. **Don't change science params** — model arch, LR sweep range, seeds,
-   and muP impl should stay as Kyle validated on A100.
-6. **Do change infra params** — batch_size, n_gpus, grad_accum, SLURM
-   partition/qos/mem are hardware-specific and should be adjusted.
+You may modify:
+- `WANDB_PROJECT` in config files
+- Hardware settings via `--hardware` override
+- `--max_concurrent` for SLURM job concurrency
