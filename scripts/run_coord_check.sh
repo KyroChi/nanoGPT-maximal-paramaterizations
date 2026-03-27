@@ -1,5 +1,6 @@
 #!/bin/bash
-# Run coordinate checks across widths to verify muP scaling.
+# Coordinate check: 1536w, sweep r (KV head count) for 20 iterations.
+# Verifies muP scaling is correct across GQA ratios.
 # Waits for any running experiment to finish first.
 #
 # Usage:
@@ -31,32 +32,32 @@ echo "=== Coordinate check starting $(date) ==="
 OUT_DIR=coord_check_results
 mkdir -p $OUT_DIR
 
-WIDTHS=(256 512 1024 1536)
-HEAD_DIM=128
+N_EMBD=1536
+N_HEAD=12       # head_dim=128
 N_LAYER=3
-SEEDS=(42 43 44)
+MAX_ITERS=20
 IMPL=gqa_mup
+MUP_MULT=$(python3 -c "print($N_EMBD / 256)")
+SEEDS=(42 43 44)
 
-for width in "${WIDTHS[@]}"; do
-    n_head=$((width / HEAD_DIM))
-    # Need at least 1 head
-    if [ $n_head -lt 1 ]; then
-        n_head=1
-    fi
-    n_kv=$((n_head > 1 ? n_head / 2 : 1))
-    mup_mult=$(python3 -c "print($width / 256)")
+# Sweep r: all valid divisors of n_head=12
+# r=1 (kv=12), r=2 (kv=6), r=3 (kv=4), r=4 (kv=3), r=6 (kv=2), r=12 (kv=1)
+KV_HEADS=(12 6 4 3 2 1)
 
+for n_kv in "${KV_HEADS[@]}"; do
+    r=$((N_HEAD / n_kv))
     for seed in "${SEEDS[@]}"; do
+        tag="${N_EMBD}w_r${r}_kv${n_kv}_s${seed}"
         echo ""
-        echo "=== width=${width}, n_head=${n_head}, n_kv=${n_kv}, seed=${seed} ==="
+        echo "=== r=${r} (kv=${n_kv}), seed=${seed} ==="
         uv run python gqa_mup/train.py \
-            --n_embd=$width --n_head=$n_head --n_kv_head=$n_kv --n_layer=$N_LAYER \
+            --n_embd=$N_EMBD --n_head=$N_HEAD --n_kv_head=$n_kv --n_layer=$N_LAYER \
             --batch_size=1 --gradient_accumulation_steps=1 \
-            --max_iters=4 --eval_interval=100000 --eval_iters=1 \
-            --learning_rate=4e-5 --mup=True --mup_multiplier=$mup_mult \
+            --max_iters=$MAX_ITERS --eval_interval=100000 --eval_iters=1 \
+            --learning_rate=4e-5 --mup=True --mup_multiplier=$MUP_MULT \
             --impl=$IMPL --coord_check=True --wandb_log=False \
             --compile=False --dtype=float32 --out_dir=$OUT_DIR \
-            --seed=$seed
+            --seed=$seed --tag=$tag
     done
 done
 
