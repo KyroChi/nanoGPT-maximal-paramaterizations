@@ -56,7 +56,7 @@ for n_kv in "${KV_HEADS[@]}"; do
             --max_iters=$MAX_ITERS --eval_interval=100000 --eval_iters=1 \
             --learning_rate=4e-5 --mup=True --mup_multiplier=$MUP_MULT \
             --impl=$IMPL --coord_check=True --wandb_log=False \
-            --compile=False --dtype=float32 --out_dir=$OUT_DIR \
+            --compile=False --dtype=bfloat16 --out_dir=$OUT_DIR \
             --seed=$seed --tag=$tag
     done
 done
