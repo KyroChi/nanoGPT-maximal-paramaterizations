@@ -94,6 +94,7 @@ impl = 'gqa_mup'
 seed = 42
 init_std = 0.02
 coord_check = False
+tag = ''
 avg_interval = 30
 normalization = "RMSNorm"
 # prelayer norm options ['None', 'LayerNorm', 'L2Norm']
@@ -626,7 +627,7 @@ if coord_check:
     from gqa_mup.coord_check import dataframe_from_data
     now = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
-    df = dataframe_from_data(data, width=config['n_embd'], depth=config['n_layer'], seed=seed, tag='')
+    df = dataframe_from_data(data, width=config['n_embd'], depth=config['n_layer'], seed=seed, tag=config.get('tag', ''))
     df.to_csv(os.path.join(out_dir, f'coord_check_{now}.csv'), index=False)
     print(f"Saved coordinate checking data to {os.path.join(out_dir, f'coord_check_{now}.csv')}")
 
