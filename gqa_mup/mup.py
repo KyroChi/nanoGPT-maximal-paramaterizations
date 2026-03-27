@@ -146,8 +146,8 @@ gqa_mup = {
     },
     'kv_layer': {
         'init_std':             lambda m, r: 1 / m**(1/2),
-        'lr_scale':             lambda m, r: (r + r**(1/2)) / (2 * m),
-        'wd_scale':             lambda m, r: 2 * m / (r + r**(1/2)),
+        'lr_scale':             lambda m, r: (1 + r**(1/2)) / (2 * m),
+        'wd_scale':             lambda m, r: 2 * m / (1 + r**(1/2)),
         'output_multiplier':    lambda m, r: 1.0
     },
     'unembedding': {
