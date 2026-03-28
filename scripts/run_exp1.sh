@@ -29,7 +29,7 @@ TPP=5
 DTYPE=bfloat16
 
 # 5 LRs: sqrt(2)-spaced around 5e-3
-LRS=(0.002500 0.003536 0.005000 0.007071 0.010000)
+LRS=(0.001250 0.001768 0.002500 0.003536 0.005000)
 
 # Run order: gqa_mup first, then SP
 # Within each: r=1 first, then r=12
