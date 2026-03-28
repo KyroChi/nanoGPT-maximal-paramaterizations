@@ -29,7 +29,7 @@ TPP=5
 DTYPE=bfloat16
 
 # 5 LRs: sqrt(2)-spaced around 5e-3
-LRS=(0.001250 0.001768 0.002500 0.003536 0.005000)
+LRS=(0.000312 0.000442 0.000625 0.000884 0.001250 0.001768 0.002500 0.003536 0.005000)
 
 # Run order: gqa_mup first, then SP
 # Within each: r=1 first, then r=12
@@ -41,7 +41,7 @@ CONFIGS=(
 )
 
 run_idx=0
-total_runs=20  # 4 configs × 5 LRs
+total_runs=36  # 4 configs × 9 LRs
 
 for config_line in "${CONFIGS[@]}"; do
     read -r impl mup n_kv kv_label max_iters <<< "$config_line"
